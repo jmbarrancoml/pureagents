@@ -1,0 +1,298 @@
+# pureagents
+
+A minimal Python library for building LLM agents. ~1,500 lines total.
+
+## Installation
+
+```bash
+pip install pureagents
+```
+
+## Quick start
+
+```python
+from pure_agents import Agent, tool
+
+@tool
+def search(query: str) -> str:
+    """Search the web for information."""
+    return f"Results for {query}..."
+
+agent = Agent(tools=[search])
+result = await agent.run("Find the weather in Madrid")
+```
+
+## Core concepts
+
+### Agent
+
+The main class. Handles LLM calls, tool execution, and conversation management.
+
+```python
+from pure_agents import Agent
+
+# Basic
+agent = Agent()
+
+# With configuration
+agent = Agent(
+    provider="openai",           # "mistral" (default), "openai", "anthropic"
+    model="gpt-4o",              # Model name
+    system="You are helpful.",   # System prompt
+    tools=[my_tool],             # List of tools
+    temperature=0.7,             # Sampling temperature
+    max_tokens=1000,             # Max response tokens
+    retries=3,                   # Retry on failure
+    timeout=30.0,                # Timeout in seconds
+    max_messages=20,             # Context limit
+    session="my-chat",           # Auto-persist memory
+    debug=True,                  # Print debug info
+)
+
+# Run
+result = await agent.run("Hello")
+
+# Stream
+async for event in agent.stream("Hello"):
+    if event.type == "text":
+        print(event.content, end="")
+
+# Batch
+results = await agent.batch(["Question 1", "Question 2"])
+```
+
+### Tools
+
+Functions the agent can call. Use the `@tool` decorator.
+
+```python
+from pure_agents import tool
+
+@tool
+def calculate(expression: str) -> str:
+    """Evaluate a math expression."""
+    return str(eval(expression))
+
+@tool
+async def fetch_url(url: str) -> str:
+    """Fetch content from a URL."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        return response.text
+
+@tool(timeout=10)
+def slow_operation(data: str) -> str:
+    """Operation with 10 second timeout."""
+    return process(data)
+
+@tool(group="web")
+def search(query: str) -> str:
+    """Search the web. Part of 'web' group."""
+    return results
+
+# Use tools
+agent = Agent(tools=[calculate, fetch_url, search])
+
+# Enable/disable groups
+agent.enable_group("web")
+agent.disable_group("web")
+```
+
+### Structured outputs
+
+Get typed responses using dataclasses.
+
+```python
+from dataclasses import dataclass
+from pure_agents import Agent
+
+@dataclass
+class Analysis:
+    sentiment: str
+    confidence: float
+    keywords: list[str]
+
+agent = Agent()
+result = await agent.run(
+    "Analyse: 'Great product!'",
+    output=Analysis
+)
+# result is an Analysis instance
+```
+
+### Memory
+
+Persist conversations across sessions.
+
+```python
+# Auto-persist with session name
+agent = Agent(session="my-chat")
+await agent.run("I'm Jose")
+# Later...
+await agent.run("What's my name?")  # Remembers
+
+# Manual save/load
+agent.save("conversation.json")
+agent.load("conversation.json")
+
+# Clear memory
+agent.clear()
+```
+
+### Streaming
+
+Real-time responses.
+
+```python
+async for event in agent.stream("Write a story"):
+    if event.type == "text":
+        print(event.content, end="", flush=True)
+    elif event.type == "tool_call":
+        print(f"\nCalling {event.name}({event.args})")
+    elif event.type == "tool_result":
+        print(f"\nResult: {event.result}")
+```
+
+### Hooks
+
+Monitor agent behaviour.
+
+```python
+def log_call(name: str, args: dict):
+    print(f"Calling {name} with {args}")
+
+def log_result(name: str, result: str):
+    print(f"{name} returned: {result}")
+
+agent = Agent(
+    on_tool_call=log_call,
+    on_tool_result=log_result,
+    on_thinking=lambda t: print(f"Thinking: {t}"),
+)
+```
+
+### Images
+
+Vision model support.
+
+```python
+agent = Agent(provider="openai", model="gpt-4o")
+
+result = await agent.run(
+    "What's in this image?",
+    images=["photo.jpg", "https://example.com/image.png"]
+)
+```
+
+## Multi-agent patterns
+
+### Chaining
+
+Sequential execution.
+
+```python
+from pure_agents import Agent, chain
+
+researcher = Agent(system="Research topics.")
+writer = Agent(system="Write summaries.")
+
+result = await chain([researcher, writer], "Explain quantum computing")
+```
+
+### Routing
+
+Dynamic agent selection.
+
+```python
+from pure_agents import Agent, Router
+
+async def classify(prompt: str) -> str:
+    return "code" if "code" in prompt.lower() else "general"
+
+router = Router(
+    agents={
+        "code": Agent(system="You are a coding expert."),
+        "general": Agent(system="You are helpful."),
+    },
+    route=classify,
+)
+
+result = await router.run("Write a Python function")
+```
+
+### Planning
+
+Think before acting.
+
+```python
+agent = Agent(tools=[search, calculate])
+result = await agent.run("Complex task here", plan=True)
+```
+
+### Graph
+
+Complex workflows with conditional edges.
+
+```python
+from pure_agents import Agent, Graph, END
+
+graph = Graph()
+graph.add_node("research", Agent(system="Research."))
+graph.add_node("write", Agent(system="Write."))
+
+graph.add_edge("research", "write")
+graph.add_conditional_edge(
+    "write",
+    lambda state: END if state.get("done") else "research"
+)
+
+result = await graph.run("Write about AI")
+```
+
+## Providers
+
+```python
+# Mistral (default)
+agent = Agent(provider="mistral", model="mistral-large-latest")
+
+# OpenAI
+agent = Agent(provider="openai", model="gpt-4o")
+
+# Anthropic
+agent = Agent(provider="anthropic", model="claude-sonnet-4-20250514")
+```
+
+Environment variables: `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
+
+## Usage tracking
+
+```python
+agent = Agent()
+await agent.run("Hello")
+
+print(agent.usage.prompt_tokens)
+print(agent.usage.completion_tokens)
+print(agent.usage.total_tokens)
+print(agent.usage.cost)  # Estimated cost in USD
+```
+
+## Sync API
+
+All async methods have sync equivalents.
+
+```python
+from pure_agents import Agent, chain_sync
+
+agent = Agent()
+result = agent.run_sync("Hello")
+result = chain_sync([agent1, agent2], "Hello")
+```
+
+## Best practices
+
+1. Always add docstrings to tools - the LLM uses them to decide when to call
+2. Use type hints - they become JSON schemas automatically
+3. Handle errors in tools - wrap in try/except if needed
+4. Use timeouts for external services
+5. Use `debug=True` during development
+6. Keep system prompts concise and specific

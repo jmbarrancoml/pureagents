@@ -57,16 +57,18 @@ result = await agent.run("Find the weather in Madrid")
 | Streaming | `agent.stream()` |
 | Memory | `session="my-chat"` |
 | Structured outputs | `output=MyDataclass` |
-| Hooks | `on_tool_call=fn` |
+| Hooks | `on_tool_call=fn`, `on_tool_result=fn`, `on_thinking=fn` |
+| Images | `images=["photo.jpg"]` for vision models |
+| Tool groups | `@tool(group="web")`, `agent.enable_group("web")` |
 | Batch | `agent.batch([...])` |
 | Chaining | `chain([agent1, agent2], prompt)` |
 | Routing | `Router(agents={...}, route=fn)` |
 | Planning | `agent.run(prompt, plan=True)` |
 | Graph | `Graph()` with nodes and conditional edges |
 | Retry | `retries=3` |
-| Timeout | `timeout=30.0` |
+| Timeout | `timeout=30.0` (agent), `@tool(timeout=10)` (per-tool) |
 | Context limit | `max_messages=20` |
-| Usage tracking | `agent.usage` |
+| Usage tracking | `agent.usage` (tokens and cost) |
 
 All features are optional. One parameter enables one feature.
 
@@ -123,6 +125,73 @@ result = await agent.run(
     "Analyse this review: 'Great product!'",
     output=Analysis
 )
+```
+
+## Chaining
+
+Sequential agent pipelines:
+
+```python
+from pure_agents import Agent, chain
+
+researcher = Agent(system="You research topics thoroughly.")
+writer = Agent(system="You write clear, concise summaries.")
+
+result = await chain([researcher, writer], "Explain quantum computing")
+```
+
+## Routing
+
+Dynamic agent selection:
+
+```python
+from pure_agents import Agent, Router
+
+async def classify(prompt: str) -> str:
+    return "technical" if "code" in prompt.lower() else "general"
+
+router = Router(
+    agents={
+        "technical": Agent(system="You are a coding expert."),
+        "general": Agent(system="You are a helpful assistant."),
+    },
+    route=classify,
+)
+
+result = await router.run("Write a Python function")
+```
+
+## Planning
+
+Think before acting:
+
+```python
+agent = Agent(tools=[search, calculate])
+
+# Agent creates a plan, then executes it
+result = await agent.run(
+    "Find the population of Spain and calculate 10% of it",
+    plan=True
+)
+```
+
+## Graph
+
+Multi-agent workflows with conditional edges:
+
+```python
+from pure_agents import Agent, Graph, END
+
+graph = Graph()
+graph.add_node("research", Agent(system="Research the topic."))
+graph.add_node("write", Agent(system="Write the content."))
+graph.add_node("review", Agent(system="Review and improve."))
+
+graph.add_edge("research", "write")
+graph.add_conditional_edge("write", lambda state: "review" if state.get("needs_review") else END)
+graph.add_edge("review", END)
+
+result = await graph.run("Write about AI agents")
 ```
 
 ## Why
