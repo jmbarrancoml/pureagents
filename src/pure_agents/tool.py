@@ -47,9 +47,14 @@ class Tool:
 
         Sync functions run on a worker thread. Calling them inline would block
         the event loop, which both serialises parallel tool calls and leaves
-        asyncio.wait_for with no opportunity to fire. Note that a timeout
-        returns control to the agent but cannot kill the thread, so a runaway
-        sync tool keeps running in the background until it finishes.
+        asyncio.wait_for with no opportunity to fire.
+
+        A timeout returns control to the agent straight away, but Python cannot
+        kill the thread, so a runaway sync tool keeps running in the background.
+        Under run_sync() that shows up at the end: asyncio.run waits for the
+        thread pool to drain before returning, so the process can sit there
+        after the agent has already moved on. Prefer an async tool that can be
+        cancelled when the work might genuinely overrun.
         """
 
         async def _execute() -> str:
