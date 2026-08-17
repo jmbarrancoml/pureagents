@@ -25,6 +25,7 @@ from pure_agents.agent import (
     clear_cache,
     completion,
     completion_sync,
+    set_cache_size,
 )
 from pure_agents.memory import JSONMemory, Memory
 from pure_agents.message import Message
@@ -47,5 +48,6 @@ __all__ = [
     "clear_cache",
     "completion",
     "completion_sync",
+    "set_cache_size",
     "tool",
 ]

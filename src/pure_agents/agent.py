@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import os
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, is_dataclass
 from pathlib import Path
@@ -48,7 +49,43 @@ TEMPLATES: dict[str, str] = {
 
 VALIDATION_RETRY_PROMPT = "Your response was invalid. Please try again."
 
-_response_cache: dict[str, str] = {}
+DEFAULT_CACHE_SIZE = 128
+
+
+class _ResponseCache:
+    """Bounded LRU cache for whole-response reuse."""
+
+    def __init__(self, maxsize: int = DEFAULT_CACHE_SIZE) -> None:
+        self.maxsize = maxsize
+        self._entries: OrderedDict[str, str] = OrderedDict()
+
+    def get(self, key: str) -> str | None:
+        if key not in self._entries:
+            return None
+        self._entries.move_to_end(key)
+        return self._entries[key]
+
+    def set(self, key: str, value: str) -> None:
+        self._entries[key] = value
+        self._entries.move_to_end(key)
+        while len(self._entries) > self.maxsize:
+            self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    def resize(self, maxsize: int) -> None:
+        if maxsize < 1:
+            raise ValueError("Cache size must be at least 1")
+        self.maxsize = maxsize
+        while len(self._entries) > self.maxsize:
+            self._entries.popitem(last=False)
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+_response_cache = _ResponseCache()
 
 
 @dataclass
@@ -118,9 +155,25 @@ def _parse_structured(content: str, output_cls: type[T]) -> T:
     return output_cls(**data)
 
 
-def _cache_key(messages: list[Message], model: str) -> str:
-    content = json.dumps([m.to_dict() for m in messages]) + model
-    return hashlib.sha256(content.encode()).hexdigest()
+def _cache_key(
+    messages: list[Message],
+    model: str,
+    provider: str,
+    tools: list[Tool],
+    tool_choice: str | None,
+) -> str:
+    """Hash everything that can change the answer, not just the prompt."""
+    payload = {
+        "provider": provider,
+        "model": model,
+        "tool_choice": tool_choice,
+        "tools": sorted(
+            (t.to_dict() for t in tools), key=lambda d: d["function"]["name"]
+        ),
+        "messages": [m.to_dict() for m in messages],
+    }
+    serialised = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(serialised.encode()).hexdigest()
 
 
 def _load_image(path: str) -> tuple[str, str]:
@@ -481,22 +534,13 @@ class Agent:
         """Run the agent. Pass output=SomeDataclass for structured output."""
         if plan:
             return await self._run_with_plan(prompt, output, images)
-        cache_key = None
-        if self.cache and not images:
-            cache_key = _cache_key(
-                self.messages + [Message(role="user", content=prompt)],
-                self.model,
-            )
-            if cache_key in _response_cache:
-                if self.debug:
-                    print("[Cache] Hit")
-                return _response_cache[cache_key]
 
         if not self.messages:
             self.messages = [Message(role="system", content=self.system_prompt)]
 
+        structured = bool(output and is_dataclass(output))
         user_prompt = prompt
-        if output and is_dataclass(output):
+        if structured:
             schema = _schema_from_dataclass(output)
             user_prompt = (
                 f"{prompt}\n\n"
@@ -504,7 +548,34 @@ class Agent:
                 f"```json\n{json.dumps(schema, indent=2)}\n```"
             )
 
-        self.messages.append(Message(role="user", content=user_prompt))
+        user_message = Message(role="user", content=user_prompt)
+
+        # The key is computed after the system prompt is in place, so two agents
+        # with different personalities no longer share an entry.
+        cache_key = None
+        if self.cache and not images:
+            cache_key = _cache_key(
+                self.messages + [user_message],
+                self.model,
+                self.provider,
+                list(self.tools.values()),
+                self.tool_choice,
+            )
+            cached = _response_cache.get(cache_key)
+            if cached is not None:
+                if self.debug:
+                    print("[Cache] Hit")
+                # A hit still has to advance the conversation, or the next turn
+                # is built on a history missing this exchange.
+                self.messages.append(user_message)
+                self.messages.append(Message(role="assistant", content=cached))
+                self._trim_messages()
+                self._auto_save()
+                if structured:
+                    return _parse_structured(cached, output)
+                return cached
+
+        self.messages.append(user_message)
         self._trim_messages()
 
         loaded_images = None
@@ -531,7 +602,9 @@ class Agent:
                     if self.debug:
                         print(f"[Final] {response.content}")
 
+                    validated = True
                     if self.validator and not self.validator(response.content):
+                        validated = False
                         if validation_attempt < self.validation_retries:
                             if self.debug:
                                 print("[Validation] Failed, retrying...")
@@ -544,10 +617,10 @@ class Agent:
 
                     self._auto_save()
 
-                    if self.cache and cache_key:
-                        _response_cache[cache_key] = response.content
+                    if cache_key and validated:
+                        _response_cache.set(cache_key, response.content)
 
-                    if output and is_dataclass(output):
+                    if structured:
                         return _parse_structured(response.content, output)
                     return response.content
 
@@ -647,7 +720,13 @@ class Agent:
 
 
 def clear_cache() -> None:
+    """Drop every cached response."""
     _response_cache.clear()
+
+
+def set_cache_size(maxsize: int) -> None:
+    """Change how many responses the shared cache keeps (default 128)."""
+    _response_cache.resize(maxsize)
 
 
 async def completion(
