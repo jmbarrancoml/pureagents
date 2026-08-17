@@ -384,14 +384,35 @@ class Agent:
             self.memory.save(self.session, self.messages)
 
     def _trim_messages(self) -> None:
+        """Drop old turns, but never split a tool call from its result.
+
+        Slicing purely by count can leave a `tool` message whose assistant
+        `tool_calls` message was cut, which both OpenAI-compatible APIs and
+        Anthropic reject with a 400. So the window is snapped back to the
+        nearest user turn, even when that keeps a couple of messages more than
+        max_messages asked for.
+        """
         if not self.max_messages or len(self.messages) <= self.max_messages:
             return
-        system = self.messages[0] if self.messages[0].role == "system" else None
-        if system:
-            keep = self.max_messages - 1
-            self.messages = [system] + self.messages[-keep:]
-        else:
-            self.messages = self.messages[-self.max_messages :]
+
+        system = None
+        body = self.messages
+        if body[0].role == "system":
+            system = body[0]
+            body = body[1:]
+
+        budget = self.max_messages - (1 if system else 0)
+        if budget < 1:
+            self.messages = [system] if system else body[-1:]
+            return
+
+        start = max(0, len(body) - budget)
+        while start > 0 and body[start].role != "user":
+            start -= 1
+        if body[start].role != "user":
+            start = 0  # No user turn in range: keep everything rather than break it.
+
+        self.messages = ([system] if system else []) + body[start:]
 
     async def _chat_with_retry(
         self,
@@ -676,6 +697,10 @@ class Agent:
                             name=tool_name,
                         )
                     )
+
+                # A long tool loop grows the history too; trimming only on the
+                # way in let a single run blow past max_messages.
+                self._trim_messages()
             else:
                 break
 
