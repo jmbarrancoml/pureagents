@@ -15,7 +15,8 @@ Agent(
     tools: list[Tool] | None = None,
     api_key: str | None = None,
     max_steps: int = 10,
-    system_prompt: str | None = None,
+    max_tokens: int | None = None,
+    system: str | None = None,
     template: str | None = None,
     debug: bool = False,
     provider: str = "mistral",
@@ -31,6 +32,8 @@ Agent(
     timeout: float | None = None,
     max_messages: int | None = None,
     fallback: str | None = None,
+    fallback_model: str | None = None,
+    fallback_api_key: str | None = None,
     cache: bool = False,
     # Tool control
     tool_choice: str | None = None,
@@ -50,8 +53,9 @@ Agent(
 | `model` | `str` | Provider default | Model to use |
 | `tools` | `list[Tool]` | `None` | Tools the agent can use |
 | `api_key` | `str` | From env | API key |
-| `max_steps` | `int` | `10` | Max ReAct loop iterations |
-| `system_prompt` | `str` | Auto | Custom system prompt |
+| `max_steps` | `int` | `10` | Max ReAct loop iterations. Exhausting them raises `MaxStepsError` |
+| `max_tokens` | `int` | `None` | Cap on output tokens per response |
+| `system` | `str` | Auto | Custom system prompt |
 | `template` | `str` | `None` | Predefined template |
 | `debug` | `bool` | `False` | Print debug info |
 | `provider` | `str` | `"mistral"` | LLM provider |
@@ -71,10 +75,12 @@ Agent(
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `retries` | `int` | `0` | Retry attempts on failure |
-| `timeout` | `float` | `None` | Request timeout (seconds) |
-| `max_messages` | `int` | `None` | Max messages in context |
-| `fallback` | `str` | `None` | Fallback provider |
+| `retries` | `int` | `0` | Retries on 429, 5xx and network failures. 4xx is not retried |
+| `timeout` | `float` | `None` | Request timeout in seconds, applied to httpx too |
+| `max_messages` | `int` | `None` | Max messages in context. Snaps to a turn boundary so tool calls stay paired |
+| `fallback` | `str` | `None` | Fallback provider, used with its own key and model |
+| `fallback_model` | `str` | Provider default | Model for the fallback provider |
+| `fallback_api_key` | `str` | From env | API key for the fallback provider |
 | `cache` | `bool` | `False` | Enable response caching |
 
 ### Tool Control
@@ -125,18 +131,37 @@ Synchronous version of `run()`.
 ### batch
 
 ```python
-async def batch(self, prompts: list[str]) -> list[str]
+async def batch(self, prompts: list[str], max_concurrency: int = 5) -> list[str]
 ```
 
-Run multiple prompts in parallel.
+Answer prompts independently, at most `max_concurrency` at a time. Each prompt
+gets its own copy of the agent, so none of them share a conversation.
 
 ### stream
 
 ```python
-async def stream(self, prompt: str) -> AsyncIterator[str]
+async def stream(
+    self,
+    prompt: str,
+    images: list[str] | None = None,
+) -> AsyncIterator[StreamEvent]
 ```
 
-Stream response token by token.
+Stream the run as `StreamEvent` objects (`text`, `tool_call`, `tool_result`,
+`done`). See the [streaming guide](../guides/streaming).
+
+### aclose
+
+```python
+async def aclose(self) -> None
+```
+
+Release the pooled HTTP connections. `Agent` is also an async context manager:
+
+```python
+async with Agent(tools=[search]) as agent:
+    await agent.run("...")
+```
 
 ### save / load / clear
 
@@ -191,5 +216,5 @@ agent = Agent(
 
 result = await agent.run("Search for Python tutorials")
 print(f"Tokens: {agent.usage.total_tokens}")
-print(f"Cost: ${agent.usage.cost('openai'):.4f}")
+print(f"Cost: {agent.usage.cost()}")  # None when the model has no rate on file
 ```

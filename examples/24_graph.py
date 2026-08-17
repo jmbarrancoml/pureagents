@@ -12,15 +12,15 @@ from pure_agents import END, Agent, Graph
 async def main():
     # Create specialised agents
     researcher = Agent(
-        system_prompt="You are a researcher. Find key facts about the topic.",
+        system="You are a researcher. Find key facts about the topic.",
     )
 
     writer = Agent(
-        system_prompt="You are a writer. Write a clear summary based on the research.",
+        system="You are a writer. Write a clear summary based on the research.",
     )
 
     reviewer = Agent(
-        system_prompt=(
+        system=(
             "You are a reviewer. Check the content for quality. "
             "If it needs improvement, say 'NEEDS_REVISION: ' followed by feedback. "
             "If it's good, say 'APPROVED: ' followed by the final content."

@@ -37,8 +37,9 @@ result = await agent.run("Say hello to Maria")
 ### Streaming
 
 ```python
-async for chunk in agent.stream("Tell me a story"):
-    print(chunk, end="", flush=True)
+async for event in agent.stream("Tell me a story"):
+    if event.type == "text":
+        print(event.content, end="", flush=True)
 ```
 
 ### Structured outputs

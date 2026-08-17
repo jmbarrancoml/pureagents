@@ -83,12 +83,12 @@ class TestAgent:
         agent = Agent(tools=[my_tool], api_key="test-key")
         assert "my_tool" in agent.tools
 
-    def test_custom_system_prompt(self):
+    def test_custom_system(self):
         agent = Agent(
             api_key="test-key",
-            system_prompt="You are a pirate.",
+            system="You are a pirate.",
         )
-        assert agent.system_prompt == "You are a pirate."
+        assert agent.system == "You are a pirate."
 
     def test_openai_provider(self):
         agent = Agent(api_key="test-key", provider="openai")

@@ -15,17 +15,17 @@ async def main():
     # Create specialised agents
     coder = Agent(
         template="coder",
-        system_prompt="You are an expert programmer. Write clean, working code.",
+        system="You are an expert programmer. Write clean, working code.",
     )
 
     writer = Agent(
         template="creative",
-        system_prompt="You are a creative writer. Write engaging, vivid prose.",
+        system="You are a creative writer. Write engaging, vivid prose.",
     )
 
     analyst = Agent(
         template="analyst",
-        system_prompt="You are a data analyst. Provide clear, logical analysis.",
+        system="You are a data analyst. Provide clear, logical analysis.",
     )
 
     # --- Option 1: Function-based routing ---

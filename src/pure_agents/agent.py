@@ -330,7 +330,7 @@ class Agent:
         api_key: str | None = None,
         max_steps: int = 10,
         max_tokens: int | None = None,
-        system_prompt: str | None = None,
+        system: str | None = None,
         template: str | None = None,
         debug: bool = False,
         provider: str = "mistral",
@@ -373,12 +373,12 @@ class Agent:
         self.debug = debug
 
         # System prompt
-        if system_prompt:
-            self.system_prompt = system_prompt
+        if system:
+            self.system = system
         elif template and template in TEMPLATES:
-            self.system_prompt = self._build_prompt(TEMPLATES[template])
+            self.system = self._build_prompt(TEMPLATES[template])
         else:
-            self.system_prompt = self._default_system_prompt()
+            self.system = self._default_system()
 
         # Usage tracking
         self.usage = Usage(model=self.model, provider=provider)
@@ -497,7 +497,7 @@ class Agent:
         if self.enabled_groups and group in self.enabled_groups:
             self.enabled_groups.remove(group)
 
-    def _default_system_prompt(self) -> str:
+    def _default_system(self) -> str:
         tool_names = ", ".join(self.tools.keys()) if self.tools else "none"
         return (
             f"You are a helpful assistant with access to tools: {tool_names}. "
@@ -631,7 +631,7 @@ class Agent:
         )
 
         if not self.messages:
-            self.messages = [Message(role="system", content=self.system_prompt)]
+            self.messages = [Message(role="system", content=self.system)]
 
         self.messages.append(Message(role="user", content=plan_prompt))
 
@@ -747,7 +747,7 @@ class Agent:
             return await self._run_with_plan(prompt, output, images)
 
         if not self.messages:
-            self.messages = [Message(role="system", content=self.system_prompt)]
+            self.messages = [Message(role="system", content=self.system)]
 
         structured = bool(output and is_dataclass(output))
         user_prompt = prompt
@@ -878,7 +878,7 @@ class Agent:
             api_key=self.api_key,
             max_steps=self.max_steps,
             max_tokens=self.max_tokens,
-            system_prompt=self.system_prompt,
+            system=self.system,
             debug=self.debug,
             provider=self.provider,
             on_tool_call=self.on_tool_call,
@@ -980,7 +980,7 @@ class Agent:
     ) -> AsyncIterator[StreamEvent]:
         """Stream a run as typed events: text, tool_call, tool_result, done."""
         if not self.messages:
-            self.messages = [Message(role="system", content=self.system_prompt)]
+            self.messages = [Message(role="system", content=self.system)]
         self.messages.append(Message(role="user", content=prompt))
         self._trim_messages()
 
@@ -1104,8 +1104,14 @@ class Graph:
         self.entry: str | None = None
 
     def add_node(self, name: str, node: Agent | Callable[[dict], dict]) -> None:
-        """Add a node. Can be an Agent or a function(state) -> state."""
+        """Add a node. Can be an Agent or a function(state) -> state.
+
+        The first node added becomes the entry point. Call set_entry() to
+        choose a different one.
+        """
         self.nodes[name] = node
+        if self.entry is None:
+            self.entry = name
 
     def add_edge(self, from_node: str, to_node: str) -> None:
         """Add a direct edge from one node to another."""
@@ -1122,38 +1128,52 @@ class Graph:
         self.entry = name
 
     async def run(self, prompt: str, state: dict | None = None) -> dict:
-        """Run the graph. Returns final state."""
+        """Run the graph and return the final state.
+
+        Agent nodes run on a per-run copy, so two runs of the same graph do not
+        inherit each other's conversation history.
+        """
         if not self.entry:
-            raise ValueError("No entry point set. Use graph.set_entry()")
+            raise ValueError("Graph has no nodes. Add one with graph.add_node().")
 
         current_state = state or {}
         current_state["input"] = prompt
         current_state["output"] = None
 
+        agents = {
+            name: node._clone()
+            for name, node in self.nodes.items()
+            if isinstance(node, Agent)
+        }
+
         current_node = self.entry
-        visited = []
+        visited: list[str] = []
 
         while current_node != END:
             if current_node not in self.nodes:
-                raise ValueError(f"Unknown node: {current_node}")
+                raise ValueError(
+                    f"Unknown node: {current_node}. Known nodes: {list(self.nodes)}"
+                )
 
             if len(visited) > 100:
                 raise RuntimeError("Graph exceeded 100 steps. Possible infinite loop.")
 
             visited.append(current_node)
-            node = self.nodes[current_node]
 
-            # Execute node
-            if isinstance(node, Agent):
+            if current_node in agents:
                 input_text = current_state.get("output") or current_state["input"]
-                result = await node.run(input_text)
+                result = await agents[current_node].run(input_text)
                 current_state["output"] = result
                 current_state[current_node] = result
             else:
-                # It's a function
-                current_state = node(current_state)
+                returned = self.nodes[current_node](current_state)
+                if not isinstance(returned, dict):
+                    raise TypeError(
+                        f"Node '{current_node}' returned {type(returned).__name__}; "
+                        "a function node must return the state dict."
+                    )
+                current_state = returned
 
-            # Find next node
             if current_node in self.conditional_edges:
                 current_node = self.conditional_edges[current_node](current_state)
             elif current_node in self.edges:
@@ -1161,6 +1181,7 @@ class Graph:
             else:
                 current_node = END
 
+        current_state["visited"] = visited
         return current_state
 
     def run_sync(self, prompt: str, state: dict | None = None) -> dict:
@@ -1228,7 +1249,7 @@ class Router:
                 model=model,
                 provider=provider,
                 api_key=api_key,
-                system_prompt=system,
+                system=system,
                 max_steps=1,
             )
 
@@ -1237,6 +1258,9 @@ class Router:
         if self._route_fn:
             return self._route_fn(prompt)
 
+        # Routing is stateless: without this the router accumulated every
+        # prompt it had ever seen and its choices drifted.
+        self._llm_router.clear()
         result = await self._llm_router.run(prompt)
         agent_name = result.strip().lower()
 

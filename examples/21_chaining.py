@@ -14,7 +14,7 @@ async def main():
     # Agent 1: Research and gather information
     researcher = Agent(
         template="researcher",
-        system_prompt=(
+        system=(
             "You are a researcher. Given a topic, provide detailed factual "
             "information. Be thorough and include specific details."
         ),
@@ -22,7 +22,7 @@ async def main():
 
     # Agent 2: Summarise and simplify
     summariser = Agent(
-        system_prompt=(
+        system=(
             "You are a summariser. Given a detailed text, create a concise summary. "
             "Keep only the most important points. Use bullet points."
         ),
@@ -30,7 +30,7 @@ async def main():
 
     # Agent 3: Format for social media
     formatter = Agent(
-        system_prompt=(
+        system=(
             "You are a social media writer. Given content, rewrite it as an engaging "
             "Twitter thread. Use emojis sparingly. Keep each tweet under 280 chars."
         ),

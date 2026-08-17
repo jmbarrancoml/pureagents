@@ -35,8 +35,8 @@ class TestBasicRun:
         assert result == "Madrid is sunny."
         assert fake.call_count == 1
 
-    async def test_sends_system_prompt_first(self, make_agent):
-        agent, fake = make_agent(system_prompt="You are a pirate.")
+    async def test_sends_system_first(self, make_agent):
+        agent, fake = make_agent(system="You are a pirate.")
         fake.queue(openai_response("Arr."))
 
         await agent.run("Hello")
@@ -164,8 +164,8 @@ class TestAnthropicProvider:
 
         assert await agent.run("hi") == "Hello from Anthropic."
 
-    async def test_system_prompt_is_a_top_level_field(self, make_agent):
-        agent, fake = make_agent(provider="anthropic", system_prompt="Be terse.")
+    async def test_system_is_a_top_level_field(self, make_agent):
+        agent, fake = make_agent(provider="anthropic", system="Be terse.")
         fake.queue(anthropic_response("ok"))
 
         await agent.run("hi")

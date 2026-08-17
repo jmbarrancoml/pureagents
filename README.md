@@ -24,7 +24,7 @@
 
 ---
 
-A Python library for building LLM agents. ~1,500 lines you can read in an afternoon. Tools, streaming, memory, structured outputs, chaining, routing, planning, graphs. No magic, no abstractions you don't need.
+A Python library for building LLM agents. ~2,200 lines you can read in an afternoon. Tools, streaming, memory, structured outputs, chaining, routing, planning, graphs. No magic, no abstractions you don't need.
 
 ---
 
@@ -56,23 +56,36 @@ result = await agent.run("Find the weather in Madrid")
 |---------|-------|
 | Tools | `@tool` decorator, type hints become JSON schemas |
 | Providers | `provider="openai"` (Mistral, OpenAI, Anthropic) |
-| Streaming | `agent.stream()` |
+| Streaming | `agent.stream()` yields `StreamEvent` objects |
 | Memory | `session="my-chat"` |
 | Structured outputs | `output=MyDataclass` |
 | Hooks | `on_tool_call=fn`, `on_tool_result=fn`, `on_thinking=fn` |
 | Images | `images=["photo.jpg"]` for vision models |
 | Tool groups | `@tool(group="web")`, `agent.enable_group("web")` |
-| Batch | `agent.batch([...])` |
+| Batch | `agent.batch([...], max_concurrency=5)` |
 | Chaining | `chain([agent1, agent2], prompt)` |
 | Routing | `Router(agents={...}, route=fn)` |
 | Planning | `agent.run(prompt, plan=True)` |
 | Graph | `Graph()` with nodes and conditional edges |
-| Retry | `retries=3` |
+| Retry | `retries=3` (only on 429, 5xx and network failures) |
+| Fallback | `fallback="anthropic"` switches provider and model |
 | Timeout | `timeout=30.0` (agent), `@tool(timeout=10)` (per-tool) |
+| Output limit | `max_tokens=8000` |
 | Context limit | `max_messages=20` |
 | Usage tracking | `agent.usage` (tokens and cost) |
 
 All features are optional. One parameter enables one feature.
+
+## Errors
+
+Failures are exceptions, not strings that look like answers:
+
+| Exception | When |
+|-----------|------|
+| `MaxStepsError` | The agent used every step without a final answer. `.partial` holds what it last said. |
+| `StructuredOutputError` | The model's reply did not match your dataclass. `.raw` holds the reply. |
+| `TruncatedResponseError` | The provider stopped at `max_tokens` mid tool call. |
+| `httpx.HTTPStatusError` | The provider rejected the request. 4xx errors are not retried. |
 
 ## Providers
 
@@ -206,13 +219,42 @@ graph.add_edge("review", END)
 result = await graph.run("Write about AI agents")
 ```
 
+The first node added is the entry point. Call `graph.set_entry("write")` to
+choose a different one. Each `graph.run()` gives its agents a fresh copy, so
+runs don't inherit each other's history.
+
+## State and concurrency
+
+An `Agent` is stateful: `run()` appends to `agent.messages` and the next call
+sends the whole conversation. That is what makes memory work, and it means two
+things:
+
+```python
+# One agent, one conversation at a time. This corrupts the history:
+await asyncio.gather(agent.run("a"), agent.run("b"))
+
+# Use batch(), which gives each prompt its own copy:
+await agent.batch(["a", "b"])
+
+# Or start fresh:
+agent.clear()
+```
+
+Connections are pooled per agent. Close them when you're done, or use the
+context manager:
+
+```python
+async with Agent(tools=[search]) as agent:
+    await agent.run("Find the weather in Madrid")
+```
+
 ## Why
 
 We follow [Anthropic's philosophy](https://www.anthropic.com/research/building-effective-agents): start simple, add complexity only when needed. Most agent frameworks do the opposite.
 
 This library gives you a clean starting point that breaks the blank page problem. Instead of figuring out how to structure your agent code, you get a working foundation with sensible defaults. Then you adapt it to your needs.
 
-- **~1,500 lines total.** Read the entire codebase in one sitting.
+- **~2,200 lines total.** Read the entire codebase in one sitting.
 - **No hidden behaviour.** What you see is what runs.
 - **Modular by default.** Each feature is independent. Use what you need.
 - **Built to be forked.** If it doesn't fit your use case, copy and modify it.

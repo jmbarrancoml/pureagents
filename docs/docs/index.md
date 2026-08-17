@@ -14,7 +14,7 @@ Most agent frameworks are over-engineered. Thousands of lines, dozens of abstrac
 **pureagents is different:**
 
 - **Powerful**: All the features you need, from basics to production
-- **Simple**: ~1,500 lines. Read the entire codebase in 30 minutes
+- **Simple**: ~2,200 lines. Read the entire codebase in 30 minutes
 - **Elegant**: Clean API. One decorator, one class. No magic
 - **Buildable**: Fork it, modify it, build on top. Not a black box
 

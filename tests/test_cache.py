@@ -38,9 +38,9 @@ class TestCacheKey:
         assert first == second == "cached answer"
         assert fake.call_count == 1
 
-    async def test_different_system_prompts_do_not_share_an_entry(self, make_agent):
-        pirate, pirate_api = make_agent(cache=True, system_prompt="You are a pirate.")
-        lawyer, lawyer_api = make_agent(cache=True, system_prompt="You are a lawyer.")
+    async def test_different_systems_do_not_share_an_entry(self, make_agent):
+        pirate, pirate_api = make_agent(cache=True, system="You are a pirate.")
+        lawyer, lawyer_api = make_agent(cache=True, system="You are a lawyer.")
         pirate_api.queue(openai_response("Arr."))
         lawyer_api.queue(openai_response("Per my last email."))
 
@@ -48,9 +48,9 @@ class TestCacheKey:
         assert await lawyer.run("hello") == "Per my last email."
 
     async def test_different_providers_do_not_share_an_entry(self, make_agent):
-        openai_agent, openai_api = make_agent(cache=True, system_prompt="x")
+        openai_agent, openai_api = make_agent(cache=True, system="x")
         mistral_agent, mistral_api = make_agent(
-            provider="mistral", cache=True, system_prompt="x"
+            provider="mistral", cache=True, system="x"
         )
         openai_agent.model = mistral_agent.model = "same-model"
         openai_api.queue(openai_response("from openai"))
@@ -60,8 +60,8 @@ class TestCacheKey:
         assert await mistral_agent.run("hello") == "from mistral"
 
     async def test_different_tool_sets_do_not_share_an_entry(self, make_agent):
-        plain, plain_api = make_agent(cache=True, system_prompt="x")
-        armed, armed_api = make_agent(cache=True, system_prompt="x", tools=[search])
+        plain, plain_api = make_agent(cache=True, system="x")
+        armed, armed_api = make_agent(cache=True, system="x", tools=[search])
         plain_api.queue(openai_response("no tools"))
         armed_api.queue(openai_response("with tools"))
 

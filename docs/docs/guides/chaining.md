@@ -12,8 +12,8 @@ Run agents in sequence. Output of each agent feeds into the next.
 from pure_agents import Agent, chain
 
 researcher = Agent(template="researcher")
-summariser = Agent(system_prompt="Summarise the following text concisely.")
-formatter = Agent(system_prompt="Format as bullet points.")
+summariser = Agent(system="Summarise the following text concisely.")
+formatter = Agent(system="Format as bullet points.")
 
 result = await chain(
     [researcher, summariser, formatter], "The history of machine learning"
@@ -32,27 +32,27 @@ Each agent receives the previous agent's output as its prompt.
 
 **Research pipeline:**
 ```python
-gatherer = Agent(system_prompt="Find information about the topic.")
-analyser = Agent(system_prompt="Analyse the information critically.")
-writer = Agent(system_prompt="Write a report based on the analysis.")
+gatherer = Agent(system="Find information about the topic.")
+analyser = Agent(system="Analyse the information critically.")
+writer = Agent(system="Write a report based on the analysis.")
 
 report = await chain([gatherer, analyser, writer], "Climate change in 2024")
 ```
 
 **Content pipeline:**
 ```python
-drafter = Agent(system_prompt="Write a first draft.")
-editor = Agent(system_prompt="Improve clarity and fix errors.")
-formatter = Agent(system_prompt="Format for publication.")
+drafter = Agent(system="Write a first draft.")
+editor = Agent(system="Improve clarity and fix errors.")
+formatter = Agent(system="Format for publication.")
 
 article = await chain([drafter, editor, formatter], "AI in healthcare")
 ```
 
 **Code pipeline:**
 ```python
-planner = Agent(system_prompt="Plan the implementation approach.")
+planner = Agent(system="Plan the implementation approach.")
 coder = Agent(template="coder")
-reviewer = Agent(system_prompt="Review the code for bugs and improvements.")
+reviewer = Agent(system="Review the code for bugs and improvements.")
 
 code = await chain([planner, coder, reviewer], "REST API for user management")
 ```
