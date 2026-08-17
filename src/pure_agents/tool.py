@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Callable, get_type_hints
 
 
@@ -34,10 +35,22 @@ class Tool:
         }
 
     async def call(self, **kwargs: Any) -> str:
+        """Run the tool and return its result as text.
+
+        Sync functions run on a worker thread. Calling them inline would block
+        the event loop, which both serialises parallel tool calls and leaves
+        asyncio.wait_for with no opportunity to fire. Note that a timeout
+        returns control to the agent but cannot kill the thread, so a runaway
+        sync tool keeps running in the background until it finishes.
+        """
+
         async def _execute() -> str:
-            result = self.fn(**kwargs)
-            if asyncio.iscoroutine(result):
-                result = await result
+            if inspect.iscoroutinefunction(self.fn):
+                result = await self.fn(**kwargs)
+            else:
+                result = await asyncio.to_thread(partial(self.fn, **kwargs))
+                if inspect.isawaitable(result):
+                    result = await result
             return str(result)
 
         if self.timeout:
