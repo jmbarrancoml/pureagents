@@ -43,6 +43,11 @@ class LLMClient:
     timeout: float = 60.0
     last_input_tokens: int = 0
     last_output_tokens: int = 0
+    # Injectable for tests; None uses httpx's real network transport.
+    transport: httpx.AsyncBaseTransport | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
 
     async def chat(
         self,
@@ -52,7 +57,7 @@ class LLMClient:
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
     ) -> Message:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http() as client:
             # Convert messages, adding images to last user message
             msg_list = []
             for i, m in enumerate(messages):
@@ -110,7 +115,7 @@ class LLMClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http() as client:
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": [m.to_dict() for m in messages],
@@ -189,6 +194,8 @@ class AnthropicClient:
     timeout: float = 60.0
     last_input_tokens: int = 0
     last_output_tokens: int = 0
+    # Injectable for tests; None uses httpx's real network transport.
+    transport: httpx.AsyncBaseTransport | None = None
 
     def _convert_messages(
         self,
@@ -267,6 +274,9 @@ class AnthropicClient:
             for t in tools
         ]
 
+    def _http(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
+
     async def chat(
         self,
         model: str,
@@ -277,7 +287,7 @@ class AnthropicClient:
     ) -> Message:
         system_prompt, converted_msgs = self._convert_messages(messages, images)
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http() as client:
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": converted_msgs,
@@ -342,7 +352,7 @@ class AnthropicClient:
     ) -> AsyncIterator[tuple[str, Message | None]]:
         system_prompt, converted_msgs = self._convert_messages(messages)
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with self._http() as client:
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": converted_msgs,
