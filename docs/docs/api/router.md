@@ -65,11 +65,13 @@ from pure_agents import Agent, Router
 coder = Agent(template="coder")
 writer = Agent(template="creative")
 
+
 # Function-based routing
 def route(prompt: str) -> str:
     if "code" in prompt.lower():
         return "coder"
     return "writer"
+
 
 router = Router(
     agents={"coder": coder, "writer": writer},

@@ -11,11 +11,13 @@ Run multiple prompts in parallel.
 ```python
 agent = Agent()
 
-results = await agent.batch([
-    "What is the capital of France?",
-    "What is 2 + 2?",
-    "Who wrote Hamlet?",
-])
+results = await agent.batch(
+    [
+        "What is the capital of France?",
+        "What is 2 + 2?",
+        "Who wrote Hamlet?",
+    ]
+)
 
 for result in results:
     print(result)
@@ -64,11 +66,14 @@ Tools work in batch mode:
 def search(query: str) -> str:
     return f"Results for {query}"
 
+
 agent = Agent(tools=[search])
-results = await agent.batch([
-    "Search for Python tutorials",
-    "Search for Rust tutorials",
-])
+results = await agent.batch(
+    [
+        "Search for Python tutorials",
+        "Search for Rust tutorials",
+    ]
+)
 ```
 
 ## When to use

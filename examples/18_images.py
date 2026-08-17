@@ -1,7 +1,5 @@
 """Image support - send images to vision models."""
 
-import asyncio
-
 from pure_agents import Agent
 
 

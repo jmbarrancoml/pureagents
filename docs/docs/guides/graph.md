@@ -59,6 +59,7 @@ def should_revise(state: dict) -> str:
         return "fix"  # Go to fix node
     return END  # Finish
 
+
 graph.add_conditional_edge("review", should_revise)
 ```
 
@@ -70,6 +71,7 @@ Nodes can be functions instead of agents:
 def process(state: dict) -> dict:
     state["output"] = state["input"].upper()
     return state
+
 
 graph.add_node("process", process)
 ```
@@ -92,10 +94,12 @@ graph.add_node("review", reviewer)
 graph.add_edge("research", "write")
 graph.add_edge("write", "review")
 
+
 def check_review(state: dict) -> str:
     if "NEEDS_REVISION" in state.get("review", ""):
         return "write"  # Loop back
     return END
+
 
 graph.add_conditional_edge("review", check_review)
 graph.set_entry("research")
@@ -108,10 +112,10 @@ result = await graph.run("Climate change solutions")
 ```python
 result = await graph.run("My prompt")
 
-print(result["input"])     # Original prompt
-print(result["output"])    # Final output
+print(result["input"])  # Original prompt
+print(result["output"])  # Final output
 print(result["research"])  # Output from research node
-print(result["write"])     # Output from write node
+print(result["write"])  # Output from write node
 ```
 
 ## Sync version

@@ -124,5 +124,6 @@ def should_continue(state: dict) -> str:
         return END
     return "process"
 
+
 graph.add_conditional_edge("check", should_continue)
 ```

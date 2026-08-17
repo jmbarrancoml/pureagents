@@ -59,7 +59,7 @@ async def main():
     result = await graph.run("The impact of AI on software development")
 
     print(f"Final output:\n{result['output']}")
-    print(f"\nNodes visited: research -> write -> review")
+    print("\nNodes visited: research -> write -> review")
     if result.get("revision_count"):
         print(f"Revisions: {result['revision_count']}")
 

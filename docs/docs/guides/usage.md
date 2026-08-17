@@ -16,10 +16,10 @@ agent = Agent()
 await agent.run("Hello, how are you?")
 await agent.run("Tell me more")
 
-print(agent.usage.input_tokens)   # Prompt tokens
+print(agent.usage.input_tokens)  # Prompt tokens
 print(agent.usage.output_tokens)  # Response tokens
-print(agent.usage.total_tokens)   # Combined
-print(agent.usage.requests)       # Number of API calls
+print(agent.usage.total_tokens)  # Combined
+print(agent.usage.requests)  # Number of API calls
 ```
 
 ## Cost estimation
@@ -27,8 +27,8 @@ print(agent.usage.requests)       # Number of API calls
 Get estimated cost in USD:
 
 ```python
-print(agent.usage.cost("mistral"))    # $0.0001
-print(agent.usage.cost("openai"))     # $0.0025
+print(agent.usage.cost("mistral"))  # $0.0001
+print(agent.usage.cost("openai"))  # $0.0025
 print(agent.usage.cost("anthropic"))  # $0.0030
 ```
 

@@ -24,6 +24,7 @@ Create a tool from a function.
 ```python
 from pure_agents import tool
 
+
 @tool
 def greet(name: str) -> str:
     """Greet someone by name."""
@@ -119,18 +120,15 @@ result = await my_tool.call(name="World")
 ```python
 from pure_agents import Tool
 
+
 def uppercase(text: str) -> str:
     return text.upper()
+
 
 my_tool = Tool(
     name="uppercase",
     description="Convert text to uppercase",
-    parameters={
-        "text": {
-            "type": "string",
-            "description": "Text to convert"
-        }
-    },
+    parameters={"text": {"type": "string", "description": "Text to convert"}},
     fn=uppercase,
     timeout=5.0,
     group="text",
@@ -161,15 +159,18 @@ def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}"
 
+
 @tool(group="web")
 def fetch(url: str) -> str:
     """Fetch a URL."""
     return f"Content of {url}"
 
+
 @tool(group="math")
 def calculate(expr: str) -> str:
     """Calculate expression."""
     return str(eval(expr))
+
 
 # Only enable web tools
 agent = Agent(

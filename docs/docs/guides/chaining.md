@@ -16,8 +16,7 @@ summariser = Agent(system_prompt="Summarise the following text concisely.")
 formatter = Agent(system_prompt="Format as bullet points.")
 
 result = await chain(
-    [researcher, summariser, formatter],
-    "The history of machine learning"
+    [researcher, summariser, formatter], "The history of machine learning"
 )
 ```
 

@@ -108,6 +108,7 @@ async def slow_api(query: str) -> str:
     """Call slow external API with 10s limit."""
     return await external_service.call(query)
 
+
 agent = Agent(tools=[slow_api])
 ```
 

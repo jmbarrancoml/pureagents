@@ -29,11 +29,14 @@ async def main():
     )
 
     # --- Option 1: Function-based routing ---
+    CODE_WORDS = ["code", "function", "program", "script"]
+    CREATIVE_WORDS = ["write", "story", "poem", "creative"]
+
     def route_fn(prompt: str) -> str:
         prompt_lower = prompt.lower()
-        if any(word in prompt_lower for word in ["code", "function", "program", "script"]):
+        if any(word in prompt_lower for word in CODE_WORDS):
             return "coder"
-        if any(word in prompt_lower for word in ["write", "story", "poem", "creative"]):
+        if any(word in prompt_lower for word in CREATIVE_WORDS):
             return "writer"
         return "analyst"
 

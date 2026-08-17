@@ -14,21 +14,20 @@ Define a dataclass and pass it to `run()`:
 from dataclasses import dataclass
 from pure_agents import Agent
 
+
 @dataclass
 class Sentiment:
     sentiment: str
     confidence: float
     summary: str
 
-agent = Agent()
-result = await agent.run(
-    "Analyse: I absolutely love this product!",
-    output=Sentiment
-)
 
-print(result.sentiment)   # "positive"
+agent = Agent()
+result = await agent.run("Analyse: I absolutely love this product!", output=Sentiment)
+
+print(result.sentiment)  # "positive"
 print(result.confidence)  # 0.95
-print(result.summary)     # "Strong positive sentiment..."
+print(result.summary)  # "Strong positive sentiment..."
 ```
 
 ## Supported types

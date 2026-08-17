@@ -71,10 +71,12 @@ Many features ≠ complicated. Every feature is optional and modular.
 ```python
 from pure_agents import Agent, tool
 
+
 @tool
 def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}..."
+
 
 agent = Agent(tools=[search])
 result = await agent.run("Find the weather in Madrid")

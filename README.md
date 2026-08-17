@@ -39,10 +39,12 @@ pip install pureagents
 ```python
 from pure_agents import Agent, tool
 
+
 @tool
 def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}..."
+
 
 agent = Agent(tools=[search])
 result = await agent.run("Find the weather in Madrid")
@@ -115,16 +117,15 @@ agent.load("conversation.json")
 ```python
 from dataclasses import dataclass
 
+
 @dataclass
 class Analysis:
     sentiment: str
     confidence: float
     keywords: list[str]
 
-result = await agent.run(
-    "Analyse this review: 'Great product!'",
-    output=Analysis
-)
+
+result = await agent.run("Analyse this review: 'Great product!'", output=Analysis)
 ```
 
 ## Chaining
@@ -147,8 +148,10 @@ Dynamic agent selection:
 ```python
 from pure_agents import Agent, Router
 
+
 async def classify(prompt: str) -> str:
     return "technical" if "code" in prompt.lower() else "general"
+
 
 router = Router(
     agents={
@@ -170,8 +173,7 @@ agent = Agent(tools=[search, calculate])
 
 # Agent creates a plan, then executes it
 result = await agent.run(
-    "Find the population of Spain and calculate 10% of it",
-    plan=True
+    "Find the population of Spain and calculate 10% of it", plan=True
 )
 ```
 
@@ -188,7 +190,9 @@ graph.add_node("write", Agent(system="Write the content."))
 graph.add_node("review", Agent(system="Review and improve."))
 
 graph.add_edge("research", "write")
-graph.add_conditional_edge("write", lambda state: "review" if state.get("needs_review") else END)
+graph.add_conditional_edge(
+    "write", lambda state: "review" if state.get("needs_review") else END
+)
 graph.add_edge("review", END)
 
 result = await graph.run("Write about AI agents")

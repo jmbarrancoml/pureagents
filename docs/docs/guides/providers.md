@@ -35,10 +35,10 @@ agent = Agent(model="mistral-small-latest")
 agent = Agent(provider="openai")
 
 # GPT-5.2 variants
-agent = Agent(provider="openai", model="gpt-5.2-instant")   # Fast
+agent = Agent(provider="openai", model="gpt-5.2-instant")  # Fast
 agent = Agent(provider="openai", model="gpt-5.2-thinking")  # Reasoning
-agent = Agent(provider="openai", model="gpt-5.2-pro")       # Best quality
-agent = Agent(provider="openai", model="gpt-5.2-codex")     # Code
+agent = Agent(provider="openai", model="gpt-5.2-pro")  # Best quality
+agent = Agent(provider="openai", model="gpt-5.2-codex")  # Code
 ```
 
 ## Anthropic
@@ -56,10 +56,7 @@ agent = Agent(provider="anthropic", model="claude-opus-4-5-20251101")
 You can pass the API key directly:
 
 ```python
-agent = Agent(
-    provider="openai",
-    api_key="sk-..."
-)
+agent = Agent(provider="openai", api_key="sk-...")
 ```
 
 :::warning
@@ -73,8 +70,5 @@ For self-hosted or proxy endpoints, modify the client directly:
 ```python
 from pure_agents.clients import LLMClient
 
-client = LLMClient(
-    api_key="your-key",
-    base_url="https://your-proxy.com/v1"
-)
+client = LLMClient(api_key="your-key", base_url="https://your-proxy.com/v1")
 ```

@@ -54,6 +54,7 @@ Implement the `Memory` interface:
 ```python
 from pure_agents import Memory, Message
 
+
 class RedisMemory(Memory):
     def __init__(self, redis_url: str):
         self.client = redis.from_url(redis_url)
@@ -75,11 +76,9 @@ class RedisMemory(Memory):
         keys = self.client.keys("session:*")
         return [k.decode().replace("session:", "") for k in keys]
 
+
 # Use it
-agent = Agent(
-    session="my-chat",
-    memory=RedisMemory("redis://localhost:6379")
-)
+agent = Agent(session="my-chat", memory=RedisMemory("redis://localhost:6379"))
 ```
 
 ## JSONMemory options

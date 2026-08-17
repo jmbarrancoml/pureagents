@@ -13,6 +13,7 @@ The simplest way to create a tool:
 ```python
 from pure_agents import tool
 
+
 @tool
 def search(query: str) -> str:
     """Search the web for information."""
@@ -77,8 +78,10 @@ For more control, create a Tool directly:
 ```python
 from pure_agents import Tool
 
+
 def my_function(x: str) -> str:
     return x.upper()
+
 
 my_tool = Tool(
     name="uppercase",
@@ -112,15 +115,18 @@ def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}"
 
+
 @tool(group="web")
 def fetch(url: str) -> str:
     """Fetch a URL."""
     return f"Content of {url}"
 
+
 @tool(group="math")
 def calculate(expr: str) -> str:
     """Evaluate expression."""
     return str(eval(expr))
+
 
 # Start with only web tools enabled
 agent = Agent(
@@ -158,10 +164,12 @@ async def fetch_weather(city: str) -> str:
     await asyncio.sleep(1)  # Simulated API
     return f"Weather in {city}: sunny"
 
+
 @tool
 async def fetch_news(topic: str) -> str:
     await asyncio.sleep(1)  # Simulated API
     return f"News about {topic}: 5 articles"
+
 
 agent = Agent(tools=[fetch_weather, fetch_news])
 

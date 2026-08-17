@@ -15,8 +15,8 @@ async def main():
     researcher = Agent(
         template="researcher",
         system_prompt=(
-            "You are a researcher. Given a topic, provide detailed factual information. "
-            "Be thorough and include specific details."
+            "You are a researcher. Given a topic, provide detailed factual "
+            "information. Be thorough and include specific details."
         ),
     )
 

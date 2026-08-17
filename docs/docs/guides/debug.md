@@ -11,10 +11,12 @@ See what your agent is doing internally.
 ```python
 from pure_agents import Agent, tool
 
+
 @tool
 def calculate(expression: str) -> str:
     """Calculate a mathematical expression."""
     return str(eval(expression))
+
 
 agent = Agent(tools=[calculate], debug=True)
 result = await agent.run("What is 25 * 4?")

@@ -45,6 +45,7 @@ def run_code(code: str) -> str:
     """Execute Python code."""
     return str(exec(code))
 
+
 coder = Agent(template="coder", tools=[run_code])
 ```
 
@@ -53,9 +54,7 @@ coder = Agent(template="coder", tools=[run_code])
 For custom prompts, use `system_prompt` directly:
 
 ```python
-agent = Agent(
-    system_prompt="You are a pirate. Respond in pirate speak. Arrr!"
-)
+agent = Agent(system_prompt="You are a pirate. Respond in pirate speak. Arrr!")
 ```
 
 ## View template content

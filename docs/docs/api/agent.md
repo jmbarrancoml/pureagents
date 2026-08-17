@@ -170,10 +170,12 @@ Dynamically enable/disable tool groups.
 ```python
 from pure_agents import Agent, tool
 
+
 @tool(timeout=10, group="search")
 def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}"
+
 
 agent = Agent(
     provider="openai",

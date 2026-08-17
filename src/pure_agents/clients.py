@@ -61,12 +61,14 @@ class LLMClient:
                 if images and m.role == "user" and i == len(messages) - 1:
                     content = [{"type": "text", "text": m.content}]
                     for img_data, media_type in images:
-                        content.append({
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{media_type};base64,{img_data}"
-                            },
-                        })
+                        content.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{media_type};base64,{img_data}"
+                                },
+                            }
+                        )
                     msg_dict["content"] = content
                 msg_list.append(msg_dict)
 
@@ -152,10 +154,12 @@ class LLMClient:
                         for tc in delta["tool_calls"]:
                             idx = tc.get("index", 0)
                             while len(tool_calls) <= idx:
-                                tool_calls.append({
-                                    "id": "",
-                                    "function": {"name": "", "arguments": ""},
-                                })
+                                tool_calls.append(
+                                    {
+                                        "id": "",
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                )
                             if tc.get("id"):
                                 tool_calls[idx]["id"] = tc["id"]
                             fn = tc.get("function", {})
@@ -166,10 +170,13 @@ class LLMClient:
                                     "arguments"
                                 ]
 
-                yield "", Message(
-                    role="assistant",
-                    content=content,
-                    tool_calls=tool_calls if tool_calls else [],
+                yield (
+                    "",
+                    Message(
+                        role="assistant",
+                        content=content,
+                        tool_calls=tool_calls if tool_calls else [],
+                    ),
                 )
 
 
@@ -199,14 +206,16 @@ class AnthropicClient:
                 if images and i == len(messages) - 1:
                     content: list[dict[str, Any]] = []
                     for img_data, media_type in images:
-                        content.append({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": img_data,
-                            },
-                        })
+                        content.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": img_data,
+                                },
+                            }
+                        )
                     content.append({"type": "text", "text": msg.content})
                     converted.append({"role": "user", "content": content})
                 else:
@@ -217,24 +226,30 @@ class AnthropicClient:
                     if msg.content:
                         content.append({"type": "text", "text": msg.content})
                     for tc in msg.tool_calls:
-                        content.append({
-                            "type": "tool_use",
-                            "id": tc["id"],
-                            "name": tc["function"]["name"],
-                            "input": json.loads(tc["function"]["arguments"]),
-                        })
+                        content.append(
+                            {
+                                "type": "tool_use",
+                                "id": tc["id"],
+                                "name": tc["function"]["name"],
+                                "input": json.loads(tc["function"]["arguments"]),
+                            }
+                        )
                     converted.append({"role": "assistant", "content": content})
                 else:
                     converted.append({"role": "assistant", "content": msg.content})
             elif msg.role == "tool":
-                converted.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.tool_call_id,
-                        "content": msg.content,
-                    }],
-                })
+                converted.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": msg.tool_call_id,
+                                "content": msg.content,
+                            }
+                        ],
+                    }
+                )
 
         return system_prompt, converted
 
@@ -302,13 +317,15 @@ class AnthropicClient:
             if block["type"] == "text":
                 content += block["text"]
             elif block["type"] == "tool_use":
-                tool_calls.append({
-                    "id": block["id"],
-                    "function": {
-                        "name": block["name"],
-                        "arguments": json.dumps(block["input"]),
-                    },
-                })
+                tool_calls.append(
+                    {
+                        "id": block["id"],
+                        "function": {
+                            "name": block["name"],
+                            "arguments": json.dumps(block["input"]),
+                        },
+                    }
+                )
 
         return Message(
             role="assistant",
@@ -394,8 +411,11 @@ class AnthropicClient:
                             tool_calls.append(current_tool)
                             current_tool = None
 
-                yield "", Message(
-                    role="assistant",
-                    content=content,
-                    tool_calls=tool_calls,
+                yield (
+                    "",
+                    Message(
+                        role="assistant",
+                        content=content,
+                        tool_calls=tool_calls,
+                    ),
                 )

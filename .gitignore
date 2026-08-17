@@ -52,3 +52,6 @@ Thumbs.db
 
 # Sessions (user data)
 .pureagents/
+
+# Claude Code local instructions
+CLAUDE.local.md

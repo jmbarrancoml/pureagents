@@ -2,7 +2,7 @@
 
 import asyncio
 
-from pure_agents import Agent, TEMPLATES
+from pure_agents import TEMPLATES, Agent
 
 
 async def main():

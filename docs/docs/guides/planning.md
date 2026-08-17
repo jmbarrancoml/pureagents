@@ -11,10 +11,12 @@ Make the agent create a plan before executing.
 ```python
 from pure_agents import Agent, tool
 
+
 @tool
 def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}..."
+
 
 agent = Agent(tools=[search])
 
@@ -43,6 +45,7 @@ Use `on_plan` hook to see the plan:
 ```python
 def show_plan(plan: str):
     print(f"Plan:\n{plan}")
+
 
 agent = Agent(
     tools=[search, write],

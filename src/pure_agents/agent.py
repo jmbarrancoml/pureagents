@@ -46,6 +46,8 @@ TEMPLATES: dict[str, str] = {
     ),
 }
 
+VALIDATION_RETRY_PROMPT = "Your response was invalid. Please try again."
+
 _response_cache: dict[str, str] = {}
 
 
@@ -59,11 +61,13 @@ class Usage:
     requests: int = 0
 
     # Approximate costs per 1M tokens (USD)
-    _costs: dict[str, tuple[float, float]] = field(default_factory=lambda: {
-        "mistral": (0.25, 0.25),
-        "openai": (2.50, 10.00),
-        "anthropic": (3.00, 15.00),
-    })
+    _costs: dict[str, tuple[float, float]] = field(
+        default_factory=lambda: {
+            "mistral": (0.25, 0.25),
+            "openai": (2.50, 10.00),
+            "anthropic": (3.00, 15.00),
+        }
+    )
 
     def add(self, input_tokens: int, output_tokens: int) -> None:
         self.input_tokens += input_tokens
@@ -236,9 +240,7 @@ class Agent:
 
         # Create client
         self.client = self._create_client(provider)
-        self.fallback_client = (
-            self._create_client(fallback) if fallback else None
-        )
+        self.fallback_client = self._create_client(fallback) if fallback else None
 
         # Load existing session
         self.messages: list[Message] = []
@@ -259,7 +261,8 @@ class Agent:
         if not self.enabled_groups:
             return self._all_tools
         return {
-            name: t for name, t in self._all_tools.items()
+            name: t
+            for name, t in self._all_tools.items()
             if t.group is None or t.group in self.enabled_groups
         }
 
@@ -312,7 +315,7 @@ class Agent:
             keep = self.max_messages - 1
             self.messages = [system] + self.messages[-keep:]
         else:
-            self.messages = self.messages[-self.max_messages:]
+            self.messages = self.messages[-self.max_messages :]
 
     async def _chat_with_retry(
         self,
@@ -508,10 +511,9 @@ class Agent:
                         if validation_attempt < self.validation_retries:
                             if self.debug:
                                 print("[Validation] Failed, retrying...")
-                            self.messages.append(Message(
-                                role="user",
-                                content="Your response was invalid. Please try again.",
-                            ))
+                            self.messages.append(
+                                Message(role="user", content=VALIDATION_RETRY_PROMPT)
+                            )
                             break  # Break inner loop, continue validation loop
                         if self.debug:
                             print("[Validation] Failed, no more retries")
