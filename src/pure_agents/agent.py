@@ -174,6 +174,8 @@ class Agent:
         timeout: float | None = None,
         max_messages: int | None = None,
         fallback: str | None = None,
+        fallback_model: str | None = None,
+        fallback_api_key: str | None = None,
         # Caching
         cache: bool = False,
         # Tool control
@@ -239,8 +241,28 @@ class Agent:
             )
 
         # Create client
-        self.client = self._create_client(provider)
-        self.fallback_client = self._create_client(fallback) if fallback else None
+        self.client = self._create_client(provider, self.api_key)
+
+        # The fallback is a different provider, so it needs its own key and its
+        # own model. Sending self.model to it would name a model it does not have.
+        self.fallback_client = None
+        self.fallback_model = None
+        if fallback:
+            if fallback not in PROVIDERS:
+                raise ValueError(
+                    f"Unknown fallback provider: {fallback}. Use: {list(PROVIDERS)}"
+                )
+            fallback_config = PROVIDERS[fallback]
+            fallback_key = fallback_api_key or os.environ.get(
+                fallback_config["env_var"], ""
+            )
+            if not fallback_key:
+                raise ValueError(
+                    f"Fallback provider '{fallback}' needs an API key. "
+                    f"Set {fallback_config['env_var']} or pass fallback_api_key."
+                )
+            self.fallback_model = fallback_model or fallback_config["default_model"]
+            self.fallback_client = self._create_client(fallback, fallback_key)
 
         # Load existing session
         self.messages: list[Message] = []
@@ -249,9 +271,10 @@ class Agent:
             if loaded:
                 self.messages = loaded
 
-    def _create_client(self, provider: str) -> LLMClient | AnthropicClient:
+    def _create_client(
+        self, provider: str, api_key: str
+    ) -> LLMClient | AnthropicClient:
         config = PROVIDERS[provider]
-        api_key = os.environ.get(config["env_var"], self.api_key)
         if config.get("client") == "anthropic":
             return AnthropicClient(api_key=api_key, base_url=config["base_url"])
         return LLMClient(api_key=api_key, base_url=config["base_url"])
@@ -325,17 +348,22 @@ class Agent:
         images: list[tuple[str, str]] | None = None,
     ) -> Message:
         last_error: Exception | None = None
-        clients = [self.client]
-        if self.fallback_client:
-            clients.append(self.fallback_client)
 
-        for client in clients:
+        # Each attempt pairs a client with the model that client actually serves.
+        attempts: list[tuple[Any, str]] = [(self.client, model)]
+        if self.fallback_client and self.fallback_model:
+            attempts.append((self.fallback_client, self.fallback_model))
+
+        for index, (client, client_model) in enumerate(attempts):
+            if index > 0 and self.debug:
+                print(f"[Fallback] Switching to {self.fallback} ({client_model})")
+
             for attempt in range(self.retries + 1):
                 try:
                     if self.timeout:
                         result = await asyncio.wait_for(
                             client.chat(
-                                model=model,
+                                model=client_model,
                                 messages=messages,
                                 tools=tools,
                                 tool_choice=self.tool_choice,
@@ -345,7 +373,7 @@ class Agent:
                         )
                     else:
                         result = await client.chat(
-                            model=model,
+                            model=client_model,
                             messages=messages,
                             tools=tools,
                             tool_choice=self.tool_choice,
@@ -363,10 +391,6 @@ class Agent:
                         if self.debug:
                             print(f"[Retry {attempt + 1}] {e}. Waiting {wait}s...")
                         await asyncio.sleep(wait)
-
-            # Try fallback
-            if self.debug and self.fallback_client and client == self.client:
-                print(f"[Fallback] Switching to {self.fallback}")
 
         raise last_error or RuntimeError("Request failed")
 
