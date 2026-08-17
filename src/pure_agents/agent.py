@@ -17,7 +17,7 @@ from typing import Any, TypeVar
 import httpx
 
 from pure_agents.clients import PROVIDERS, AnthropicClient, LLMClient
-from pure_agents.memory import JSONMemory, Memory
+from pure_agents.memory import JSONMemory, Memory, write_json_atomically
 from pure_agents.message import Message
 from pure_agents.schema import dataclass_schema
 from pure_agents.tool import Tool
@@ -176,6 +176,18 @@ class Usage:
 
 
 MAX_STEPS_MESSAGE = "Max steps reached without final answer."
+DEFAULT_BATCH_CONCURRENCY = 5
+
+
+class MaxStepsError(RuntimeError):
+    """The agent used every step without producing a final answer."""
+
+    def __init__(self, steps: int, partial: str = "") -> None:
+        super().__init__(
+            f"{MAX_STEPS_MESSAGE} Used all {steps} steps. Raise Agent(max_steps=...)."
+        )
+        self.steps = steps
+        self.partial = partial
 
 
 @dataclass
@@ -501,7 +513,7 @@ class Agent:
 
     def save(self, path: str) -> None:
         data = [m.to_dict() for m in self.messages]
-        Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json_atomically(Path(path), data)
 
     def load(self, path: str) -> None:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -842,7 +854,12 @@ class Agent:
                 break
 
         self._auto_save()
-        return MAX_STEPS_MESSAGE
+        # Returning this as a plain string made a failure indistinguishable
+        # from an answer, and broke the return type when output= was set.
+        last_assistant = next(
+            (m.content for m in reversed(self.messages) if m.role == "assistant"), ""
+        )
+        raise MaxStepsError(self.max_steps, partial=last_assistant)
 
     def run_sync(
         self,
@@ -853,26 +870,61 @@ class Agent:
     ) -> str | T:
         return asyncio.run(self.run(prompt, output=output, images=images, plan=plan))
 
-    async def batch(self, prompts: list[str]) -> list[str]:
+    def _clone(self) -> Agent:
+        """A fresh agent with this one's configuration but no history."""
+        clone = Agent(
+            model=self.model,
+            tools=list(self._all_tools.values()) if self._all_tools else None,
+            api_key=self.api_key,
+            max_steps=self.max_steps,
+            max_tokens=self.max_tokens,
+            system_prompt=self.system_prompt,
+            debug=self.debug,
+            provider=self.provider,
+            on_tool_call=self.on_tool_call,
+            on_tool_result=self.on_tool_result,
+            on_thinking=self.on_thinking,
+            on_plan=self.on_plan,
+            retries=self.retries,
+            timeout=self.timeout,
+            max_messages=self.max_messages,
+            fallback=self.fallback,
+            fallback_model=self.fallback_model,
+            fallback_api_key=(
+                self.fallback_client.api_key if self.fallback_client else None
+            ),
+            cache=self.cache,
+            tool_choice=self.tool_choice,
+            enabled_groups=(
+                list(self.enabled_groups) if self.enabled_groups is not None else None
+            ),
+            validator=self.validator,
+            validation_retries=self.validation_retries,
+        )
+        # Reuse this agent's pooled connections rather than opening new ones.
+        clone.client = self.client
+        clone.fallback_client = self.fallback_client
+        return clone
+
+    async def batch(
+        self,
+        prompts: list[str],
+        max_concurrency: int = DEFAULT_BATCH_CONCURRENCY,
+    ) -> list[str]:
+        """Answer many prompts independently, at most max_concurrency at a time."""
+        semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
         async def run_one(prompt: str) -> str:
-            fresh = Agent(
-                model=self.model,
-                tools=list(self._all_tools.values()) if self._all_tools else None,
-                api_key=self.api_key,
-                max_steps=self.max_steps,
-                system_prompt=self.system_prompt,
-                debug=self.debug,
-                provider=self.provider,
-                retries=self.retries,
-                timeout=self.timeout,
-                fallback=self.fallback,
-                cache=self.cache,
-                tool_choice=self.tool_choice,
-            )
-            result = await fresh.run(prompt)
-            self.usage.add(fresh.usage.input_tokens, fresh.usage.output_tokens)
-            return result
+            async with semaphore:
+                fresh = self._clone()
+                result = await fresh.run(prompt)
+                # Carry the real request count over, not one per prompt: a
+                # prompt that used three tool steps made four API calls.
+                self.usage.input_tokens += fresh.usage.input_tokens
+                self.usage.output_tokens += fresh.usage.output_tokens
+                self.usage.total_tokens += fresh.usage.total_tokens
+                self.usage.requests += fresh.usage.requests
+                return result
 
         return await asyncio.gather(*[run_one(p) for p in prompts])
 

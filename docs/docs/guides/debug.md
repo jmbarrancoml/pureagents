@@ -47,8 +47,9 @@ Works with streaming too:
 ```python
 agent = Agent(tools=[calculate], debug=True)
 
-async for chunk in agent.stream("Calculate 100 / 4"):
-    print(chunk, end="", flush=True)
+async for event in agent.stream("Calculate 100 / 4"):
+    if event.type == "text":
+        print(event.content, end="", flush=True)
 ```
 
 ## Max steps
@@ -59,12 +60,20 @@ The agent stops after `max_steps` to prevent infinite loops:
 agent = Agent(max_steps=5, debug=True)
 ```
 
-If the agent reaches max steps:
+Running out of steps raises `MaxStepsError`, so it can't be mistaken for an
+answer. The last thing the model said is on `.partial`:
+
+```python
+from pure_agents import MaxStepsError
+
+try:
+    result = await agent.run("Keep calling tools forever")
+except MaxStepsError as e:
+    print(f"Gave up after {e.steps} steps. Last said: {e.partial}")
 ```
-[Step 5/5]
-...
-Max steps reached without final answer.
-```
+
+`stream()` ends with a `done` event instead, since events have already reached
+the caller by then.
 
 ## Inspecting messages
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pure_agents import tool
+from pure_agents import MaxStepsError, tool
 from tests.conftest import (
     anthropic_response,
     anthropic_tool_use,
@@ -150,10 +150,11 @@ class TestToolLoop:
                 openai_response(None, [openai_tool_call("add", {"a": 1, "b": 1})])
             )
 
-        result = await agent.run("loop forever")
+        with pytest.raises(MaxStepsError) as excinfo:
+            await agent.run("loop forever")
 
         assert fake.call_count == 2
-        assert "Max steps" in result
+        assert excinfo.value.steps == 2
 
 
 class TestAnthropicProvider:
