@@ -11,11 +11,12 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, is_dataclass
 from pathlib import Path
-from typing import Any, TypeVar, get_type_hints
+from typing import Any, TypeVar
 
 from pure_agents.clients import PROVIDERS, AnthropicClient, LLMClient
 from pure_agents.memory import JSONMemory, Memory
 from pure_agents.message import Message
+from pure_agents.schema import dataclass_schema
 from pure_agents.tool import Tool
 
 T = TypeVar("T")
@@ -125,34 +126,62 @@ class Usage:
         self.requests = 0
 
 
+class StructuredOutputError(ValueError):
+    """The model's reply could not be turned into the requested dataclass."""
+
+    def __init__(self, message: str, raw: str) -> None:
+        super().__init__(message)
+        self.raw = raw
+
+
 def _schema_from_dataclass(cls: type) -> dict[str, Any]:
-    hints = get_type_hints(cls)
-    properties = {}
-    for name, hint in hints.items():
-        if hint is str:
-            properties[name] = {"type": "string"}
-        elif hint is int:
-            properties[name] = {"type": "integer"}
-        elif hint is float:
-            properties[name] = {"type": "number"}
-        elif hint is bool:
-            properties[name] = {"type": "boolean"}
-        else:
-            properties[name] = {"type": "string"}
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(hints.keys()),
-    }
+    return dataclass_schema(cls)
+
+
+def _extract_json(content: str) -> str:
+    """Pull the JSON object out of a reply that may be fenced or chatty."""
+    text = content.strip()
+
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines[1:]).strip()
+
+    if not text.startswith("{"):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            text = text[start : end + 1]
+
+    return text
 
 
 def _parse_structured(content: str, output_cls: type[T]) -> T:
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        text = "\n".join(lines[1:-1]) if lines[-1] == "```" else "\n".join(lines[1:])
-    data = json.loads(text)
-    return output_cls(**data)
+    text = _extract_json(content)
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise StructuredOutputError(
+            f"Model did not return valid JSON for {output_cls.__name__}: {e}",
+            content,
+        ) from e
+
+    if not isinstance(data, dict):
+        raise StructuredOutputError(
+            f"Model returned {type(data).__name__}, not a JSON object, "
+            f"for {output_cls.__name__}",
+            content,
+        )
+
+    try:
+        return output_cls(**data)
+    except TypeError as e:
+        raise StructuredOutputError(
+            f"Model's JSON does not match {output_cls.__name__}: {e}",
+            content,
+        ) from e
 
 
 def _cache_key(

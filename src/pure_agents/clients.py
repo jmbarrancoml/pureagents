@@ -265,11 +265,7 @@ class AnthropicClient:
             {
                 "name": t.name,
                 "description": t.description,
-                "input_schema": {
-                    "type": "object",
-                    "properties": t.parameters,
-                    "required": list(t.parameters.keys()),
-                },
+                "input_schema": t.schema(),
             }
             for t in tools
         ]

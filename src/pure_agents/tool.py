@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable, get_type_hints
+
+from pure_agents.schema import json_schema
 
 
 @dataclass
@@ -19,6 +21,16 @@ class Tool:
     fn: Callable[..., Any]
     timeout: float | None = None
     group: str | None = None
+    # Parameters without a default. Marking everything required forced the
+    # model to invent values for optional arguments.
+    required: list[str] = field(default_factory=list)
+
+    def schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": self.parameters,
+            "required": list(self.required),
+        }
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -26,11 +38,7 @@ class Tool:
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": self.parameters,
-                    "required": list(self.parameters.keys()),
-                },
+                "parameters": self.schema(),
             },
         }
 
@@ -58,18 +66,6 @@ class Tool:
         return await _execute()
 
 
-def _python_type_to_json_schema(py_type: type) -> dict[str, str]:
-    type_map = {
-        str: {"type": "string"},
-        int: {"type": "integer"},
-        float: {"type": "number"},
-        bool: {"type": "boolean"},
-        list: {"type": "array"},
-        dict: {"type": "object"},
-    }
-    return type_map.get(py_type, {"type": "string"})
-
-
 def tool(
     fn: Callable[..., Any] | None = None,
     *,
@@ -87,12 +83,16 @@ def tool(
         hints = get_type_hints(f)
         sig = inspect.signature(f)
 
-        parameters = {}
+        parameters: dict[str, Any] = {}
+        required: list[str] = []
         for param_name, param in sig.parameters.items():
             if param_name == "return":
                 continue
-            param_type = hints.get(param_name, str)
-            parameters[param_name] = _python_type_to_json_schema(param_type)
+            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
+                continue
+            parameters[param_name] = json_schema(hints.get(param_name, str))
+            if param.default is inspect.Parameter.empty:
+                required.append(param_name)
 
         return Tool(
             name=name,
@@ -101,6 +101,7 @@ def tool(
             fn=f,
             timeout=timeout,
             group=group,
+            required=required,
         )
 
     # Support both @tool and @tool(timeout=10)
