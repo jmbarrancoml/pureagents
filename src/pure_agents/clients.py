@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -48,8 +48,24 @@ class LLMClient:
     # Injectable for tests; None uses httpx's real network transport.
     transport: httpx.AsyncBaseTransport | None = None
 
+    # Reused across requests so connections are pooled and TLS is negotiated
+    # once, instead of a fresh handshake per model call.
+    _client: httpx.AsyncClient | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
     def _http(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout, transport=self.transport
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the pooled connections. Safe to call more than once."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def chat(
         self,
@@ -59,48 +75,48 @@ class LLMClient:
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
     ) -> Message:
-        async with self._http() as client:
-            # Convert messages, adding images to last user message
-            msg_list = []
-            for i, m in enumerate(messages):
-                msg_dict = m.to_dict()
-                # Add images to the last user message
-                if images and m.role == "user" and i == len(messages) - 1:
-                    content = [{"type": "text", "text": m.content}]
-                    for img_data, media_type in images:
-                        content.append(
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{media_type};base64,{img_data}"
-                                },
-                            }
-                        )
-                    msg_dict["content"] = content
-                msg_list.append(msg_dict)
+        client = self._http()
+        # Convert messages, adding images to last user message
+        msg_list = []
+        for i, m in enumerate(messages):
+            msg_dict = m.to_dict()
+            # Add images to the last user message
+            if images and m.role == "user" and i == len(messages) - 1:
+                content = [{"type": "text", "text": m.content}]
+                for img_data, media_type in images:
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{media_type};base64,{img_data}"
+                            },
+                        }
+                    )
+                msg_dict["content"] = content
+            msg_list.append(msg_dict)
 
-            payload: dict[str, Any] = {
-                "model": model,
-                "messages": msg_list,
-            }
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": msg_list,
+        }
 
-            if self.max_tokens:
-                payload["max_tokens"] = self.max_tokens
+        if self.max_tokens:
+            payload["max_tokens"] = self.max_tokens
 
-            if tools:
-                payload["tools"] = [t.to_dict() for t in tools]
-                payload["tool_choice"] = tool_choice or "auto"
+        if tools:
+            payload["tools"] = [t.to_dict() for t in tools]
+            payload["tool_choice"] = tool_choice or "auto"
 
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await client.post(
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
 
         if "usage" in data:
             self.last_input_tokens = data["usage"].get("prompt_tokens", 0)
@@ -120,74 +136,72 @@ class LLMClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
-        async with self._http() as client:
-            payload: dict[str, Any] = {
-                "model": model,
-                "messages": [m.to_dict() for m in messages],
-                "stream": True,
-            }
+        client = self._http()
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": [m.to_dict() for m in messages],
+            "stream": True,
+        }
 
-            if tools:
-                payload["tools"] = [t.to_dict() for t in tools]
-                payload["tool_choice"] = tool_choice or "auto"
+        if tools:
+            payload["tools"] = [t.to_dict() for t in tools]
+            payload["tool_choice"] = tool_choice or "auto"
 
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            ) as response:
-                response.raise_for_status()
+        async with client.stream(
+            "POST",
+            f"{self.base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        ) as response:
+            response.raise_for_status()
 
-                content = ""
-                tool_calls: list[dict[str, Any]] = []
+            content = ""
+            tool_calls: list[dict[str, Any]] = []
 
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
 
-                    data_str = line[6:]
-                    if data_str == "[DONE]":
-                        break
+                data_str = line[6:]
+                if data_str == "[DONE]":
+                    break
 
-                    data = json.loads(data_str)
-                    delta = data["choices"][0].get("delta", {})
+                data = json.loads(data_str)
+                delta = data["choices"][0].get("delta", {})
 
-                    if delta.get("content"):
-                        content += delta["content"]
-                        yield delta["content"], None
+                if delta.get("content"):
+                    content += delta["content"]
+                    yield delta["content"], None
 
-                    if delta.get("tool_calls"):
-                        for tc in delta["tool_calls"]:
-                            idx = tc.get("index", 0)
-                            while len(tool_calls) <= idx:
-                                tool_calls.append(
-                                    {
-                                        "id": "",
-                                        "function": {"name": "", "arguments": ""},
-                                    }
-                                )
-                            if tc.get("id"):
-                                tool_calls[idx]["id"] = tc["id"]
-                            fn = tc.get("function", {})
-                            if fn.get("name"):
-                                tool_calls[idx]["function"]["name"] = fn["name"]
-                            if fn.get("arguments"):
-                                tool_calls[idx]["function"]["arguments"] += fn[
-                                    "arguments"
-                                ]
+                if delta.get("tool_calls"):
+                    for tc in delta["tool_calls"]:
+                        idx = tc.get("index", 0)
+                        while len(tool_calls) <= idx:
+                            tool_calls.append(
+                                {
+                                    "id": "",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            )
+                        if tc.get("id"):
+                            tool_calls[idx]["id"] = tc["id"]
+                        fn = tc.get("function", {})
+                        if fn.get("name"):
+                            tool_calls[idx]["function"]["name"] = fn["name"]
+                        if fn.get("arguments"):
+                            tool_calls[idx]["function"]["arguments"] += fn["arguments"]
 
-                yield (
-                    "",
-                    Message(
-                        role="assistant",
-                        content=content,
-                        tool_calls=tool_calls if tool_calls else [],
-                    ),
-                )
+            yield (
+                "",
+                Message(
+                    role="assistant",
+                    content=content,
+                    tool_calls=tool_calls if tool_calls else [],
+                ),
+            )
 
 
 class TruncatedResponseError(RuntimeError):
@@ -293,8 +307,24 @@ class AnthropicClient:
             for t in tools
         ]
 
+    # Reused across requests so connections are pooled and TLS is negotiated
+    # once, instead of a fresh handshake per model call.
+    _client: httpx.AsyncClient | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
     def _http(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout, transport=self.transport
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the pooled connections. Safe to call more than once."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def chat(
         self,
@@ -306,34 +336,34 @@ class AnthropicClient:
     ) -> Message:
         system_prompt, converted_msgs = self._convert_messages(messages, images)
 
-        async with self._http() as client:
-            payload: dict[str, Any] = {
-                "model": model,
-                "messages": converted_msgs,
-                "max_tokens": self.max_tokens,
-            }
+        client = self._http()
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": converted_msgs,
+            "max_tokens": self.max_tokens,
+        }
 
-            if system_prompt:
-                payload["system"] = system_prompt
+        if system_prompt:
+            payload["system"] = system_prompt
 
-            if tools:
-                payload["tools"] = self._convert_tools(tools)
-                if tool_choice == "required":
-                    payload["tool_choice"] = {"type": "any"}
-                elif tool_choice == "none":
-                    payload["tool_choice"] = {"type": "none"}
+        if tools:
+            payload["tools"] = self._convert_tools(tools)
+            if tool_choice == "required":
+                payload["tool_choice"] = {"type": "any"}
+            elif tool_choice == "none":
+                payload["tool_choice"] = {"type": "none"}
 
-            response = await client.post(
-                f"{self.base_url}/messages",
-                headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await client.post(
+            f"{self.base_url}/messages",
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
 
         if "usage" in data:
             self.last_input_tokens = data["usage"].get("input_tokens", 0)
@@ -381,80 +411,80 @@ class AnthropicClient:
     ) -> AsyncIterator[tuple[str, Message | None]]:
         system_prompt, converted_msgs = self._convert_messages(messages)
 
-        async with self._http() as client:
-            payload: dict[str, Any] = {
-                "model": model,
-                "messages": converted_msgs,
-                "max_tokens": self.max_tokens,
-                "stream": True,
-            }
+        client = self._http()
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": converted_msgs,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
 
-            if system_prompt:
-                payload["system"] = system_prompt
+        if system_prompt:
+            payload["system"] = system_prompt
 
-            if tools:
-                payload["tools"] = self._convert_tools(tools)
-                if tool_choice == "required":
-                    payload["tool_choice"] = {"type": "any"}
+        if tools:
+            payload["tools"] = self._convert_tools(tools)
+            if tool_choice == "required":
+                payload["tool_choice"] = {"type": "any"}
 
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/messages",
-                headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            ) as response:
-                response.raise_for_status()
+        async with client.stream(
+            "POST",
+            f"{self.base_url}/messages",
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        ) as response:
+            response.raise_for_status()
 
-                content = ""
-                tool_calls: list[dict[str, Any]] = []
-                current_tool: dict[str, Any] | None = None
+            content = ""
+            tool_calls: list[dict[str, Any]] = []
+            current_tool: dict[str, Any] | None = None
 
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
 
-                    data_str = line[6:]
-                    if not data_str or data_str == "[DONE]":
-                        continue
+                data_str = line[6:]
+                if not data_str or data_str == "[DONE]":
+                    continue
 
-                    data = json.loads(data_str)
-                    event_type = data.get("type", "")
+                data = json.loads(data_str)
+                event_type = data.get("type", "")
 
-                    if event_type == "content_block_start":
-                        block = data.get("content_block", {})
-                        if block.get("type") == "tool_use":
-                            current_tool = {
-                                "id": block["id"],
-                                "function": {
-                                    "name": block["name"],
-                                    "arguments": "",
-                                },
-                            }
-                    elif event_type == "content_block_delta":
-                        delta = data.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            text = delta.get("text", "")
-                            content += text
-                            yield text, None
-                        elif delta.get("type") == "input_json_delta":
-                            if current_tool:
-                                current_tool["function"]["arguments"] += delta.get(
-                                    "partial_json", ""
-                                )
-                    elif event_type == "content_block_stop":
+                if event_type == "content_block_start":
+                    block = data.get("content_block", {})
+                    if block.get("type") == "tool_use":
+                        current_tool = {
+                            "id": block["id"],
+                            "function": {
+                                "name": block["name"],
+                                "arguments": "",
+                            },
+                        }
+                elif event_type == "content_block_delta":
+                    delta = data.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text", "")
+                        content += text
+                        yield text, None
+                    elif delta.get("type") == "input_json_delta":
                         if current_tool:
-                            tool_calls.append(current_tool)
-                            current_tool = None
+                            current_tool["function"]["arguments"] += delta.get(
+                                "partial_json", ""
+                            )
+                elif event_type == "content_block_stop":
+                    if current_tool:
+                        tool_calls.append(current_tool)
+                        current_tool = None
 
-                yield (
-                    "",
-                    Message(
-                        role="assistant",
-                        content=content,
-                        tool_calls=tool_calls,
-                    ),
-                )
+            yield (
+                "",
+                Message(
+                    role="assistant",
+                    content=content,
+                    tool_calls=tool_calls,
+                ),
+            )

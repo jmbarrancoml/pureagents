@@ -48,6 +48,8 @@ TEMPLATES: dict[str, str] = {
     ),
 }
 
+DEFAULT_REQUEST_TIMEOUT = 60.0
+
 VALIDATION_RETRY_PROMPT = "Your response was invalid. Please try again."
 
 DEFAULT_CACHE_SIZE = 128
@@ -359,16 +361,34 @@ class Agent:
         self, provider: str, api_key: str
     ) -> LLMClient | AnthropicClient:
         config = PROVIDERS[provider]
+        # Without this the client kept its own 60s ceiling and Agent(timeout=300)
+        # still died at 60.
+        timeout = self.timeout if self.timeout else DEFAULT_REQUEST_TIMEOUT
         if config.get("client") == "anthropic":
-            client = AnthropicClient(api_key=api_key, base_url=config["base_url"])
+            client = AnthropicClient(
+                api_key=api_key, base_url=config["base_url"], timeout=timeout
+            )
             if self.max_tokens:
                 client.max_tokens = self.max_tokens
             return client
         return LLMClient(
             api_key=api_key,
             base_url=config["base_url"],
+            timeout=timeout,
             max_tokens=self.max_tokens,
         )
+
+    async def aclose(self) -> None:
+        """Release pooled HTTP connections."""
+        await self.client.aclose()
+        if self.fallback_client is not None:
+            await self.fallback_client.aclose()
+
+    async def __aenter__(self) -> Agent:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
 
     @property
     def tools(self) -> dict[str, Tool]:
