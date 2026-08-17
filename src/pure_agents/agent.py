@@ -492,16 +492,35 @@ class Agent:
     async def _execute_tools_parallel(
         self, tool_calls: list[dict]
     ) -> list[tuple[str, str, str]]:
-        async def execute_one(tc: dict) -> tuple[str, str, str]:
-            tool_name = tc["function"]["name"]
-            tool_args = json.loads(tc["function"]["arguments"])
-            tool_id = tc["id"]
+        async def execute_one(tc: dict, index: int) -> tuple[str, str, str]:
+            function = tc.get("function") or {}
+            tool_name = function.get("name") or "unknown"
+            # Some providers omit the id; the API still needs one to match on.
+            tool_id = tc.get("id") or f"call_{index}"
+
+            # Everything below reports failures as tool results. A malformed
+            # argument string or a broken hook must not abort the whole run.
+            try:
+                raw_args = function.get("arguments") or "{}"
+                tool_args = (
+                    json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                )
+                if not isinstance(tool_args, dict):
+                    raise TypeError("tool arguments must be a JSON object")
+            except Exception as e:
+                result = f"Error: could not parse arguments for '{tool_name}': {e}"
+                self._report_tool_result(tool_name, result)
+                return tool_name, tool_id, result
 
             if self.debug:
                 print(f"[Call] {tool_name}({tool_args})")
 
             if self.on_tool_call:
-                self.on_tool_call(tool_name, tool_args)
+                try:
+                    self.on_tool_call(tool_name, tool_args)
+                except Exception as e:
+                    if self.debug:
+                        print(f"[Hook] on_tool_call raised: {e}")
 
             if tool_name not in self.tools:
                 result = f"Error: Unknown tool '{tool_name}'"
@@ -510,19 +529,41 @@ class Agent:
                     result = await self.tools[tool_name].call(**tool_args)
                 except asyncio.TimeoutError:
                     result = f"Error: Tool '{tool_name}' timed out"
+                except TypeError as e:
+                    result = f"Error: bad arguments for '{tool_name}': {e}"
                 except Exception as e:
                     result = f"Error: {e}"
 
-            if self.debug:
-                print(f"[Result] {result}")
-
-            if self.on_tool_result:
-                self.on_tool_result(tool_name, result)
-
+            self._report_tool_result(tool_name, result)
             return tool_name, tool_id, result
 
-        results = await asyncio.gather(*[execute_one(tc) for tc in tool_calls])
-        return results
+        results = await asyncio.gather(
+            *[execute_one(tc, i) for i, tc in enumerate(tool_calls)],
+            return_exceptions=True,
+        )
+
+        # gather with return_exceptions can only surface a bug in execute_one
+        # itself; turn it into a tool result rather than losing the whole turn.
+        resolved: list[tuple[str, str, str]] = []
+        for index, item in enumerate(results):
+            if isinstance(item, BaseException):
+                call = tool_calls[index]
+                name = (call.get("function") or {}).get("name") or "unknown"
+                call_id = call.get("id") or f"call_{index}"
+                resolved.append((name, call_id, f"Error: {item}"))
+            else:
+                resolved.append(item)
+        return resolved
+
+    def _report_tool_result(self, tool_name: str, result: str) -> None:
+        if self.debug:
+            print(f"[Result] {result}")
+        if self.on_tool_result:
+            try:
+                self.on_tool_result(tool_name, result)
+            except Exception as e:
+                if self.debug:
+                    print(f"[Hook] on_tool_result raised: {e}")
 
     async def run(
         self,
