@@ -75,6 +75,10 @@ class LLMClient:
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
     ) -> Message:
+        # Reset first: a response without a usage block used to leave the
+        # previous call's numbers in place, which Agent then counted twice.
+        self.last_input_tokens = 0
+        self.last_output_tokens = 0
         client = self._http()
         # Convert messages, adding images to last user message
         msg_list = []
@@ -136,6 +140,10 @@ class LLMClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
+        # Reset first: a response without a usage block used to leave the
+        # previous call's numbers in place, which Agent then counted twice.
+        self.last_input_tokens = 0
+        self.last_output_tokens = 0
         client = self._http()
         payload: dict[str, Any] = {
             "model": model,
@@ -336,6 +344,10 @@ class AnthropicClient:
     ) -> Message:
         system_prompt, converted_msgs = self._convert_messages(messages, images)
 
+        # Reset first: a response without a usage block used to leave the
+        # previous call's numbers in place, which Agent then counted twice.
+        self.last_input_tokens = 0
+        self.last_output_tokens = 0
         client = self._http()
         payload: dict[str, Any] = {
             "model": model,
@@ -411,6 +423,10 @@ class AnthropicClient:
     ) -> AsyncIterator[tuple[str, Message | None]]:
         system_prompt, converted_msgs = self._convert_messages(messages)
 
+        # Reset first: a response without a usage block used to leave the
+        # previous call's numbers in place, which Agent then counted twice.
+        self.last_input_tokens = 0
+        self.last_output_tokens = 0
         client = self._http()
         payload: dict[str, Any] = {
             "model": model,

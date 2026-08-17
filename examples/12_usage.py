@@ -27,11 +27,14 @@ async def main():
     print(f"Output tokens: {agent.usage.output_tokens}")
     print(f"Total tokens: {agent.usage.total_tokens}")
 
-    # Estimate cost
+    # Estimate cost. cost() returns None when the model has no rate on file.
     print("\n=== Cost Estimate ===")
-    print(f"Mistral: ${agent.usage.cost('mistral'):.4f}")
-    print(f"OpenAI: ${agent.usage.cost('openai'):.4f}")
-    print(f"Anthropic: ${agent.usage.cost('anthropic'):.4f}")
+    spent = agent.usage.cost()
+    if spent is None:
+        print(f"No published rate for {agent.model}. Set your own:")
+        agent.usage.set_rates(2.00, 6.00)  # USD per million tokens
+        spent = agent.usage.cost()
+    print(f"{agent.model}: ${spent:.4f}")
 
     # Reset usage
     agent.usage.reset()

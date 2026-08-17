@@ -7,11 +7,14 @@ import base64
 import hashlib
 import json
 import os
+import random
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field, is_dataclass
+from dataclasses import dataclass, is_dataclass
 from pathlib import Path
 from typing import Any, TypeVar
+
+import httpx
 
 from pure_agents.clients import PROVIDERS, AnthropicClient, LLMClient
 from pure_agents.memory import JSONMemory, Memory
@@ -49,6 +52,33 @@ TEMPLATES: dict[str, str] = {
 }
 
 DEFAULT_REQUEST_TIMEOUT = 60.0
+MAX_RETRY_DELAY = 60.0
+
+# Statuses worth trying again. A 400 or a 401 will fail identically every time,
+# so retrying them only delays the error the caller needs to see.
+RETRYABLE_STATUS = {408, 409, 425, 429}
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status in RETRYABLE_STATUS or status >= 500
+    return isinstance(exc, (httpx.TransportError, asyncio.TimeoutError))
+
+
+def _retry_delay(exc: BaseException, attempt: int) -> float:
+    """Back off, preferring the server's own Retry-After when it sends one."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        retry_after = exc.response.headers.get("retry-after")
+        if retry_after:
+            try:
+                return min(float(retry_after), MAX_RETRY_DELAY)
+            except ValueError:
+                pass
+    backoff = min(2.0**attempt, MAX_RETRY_DELAY)
+    # Equal jitter, so a fleet of agents does not retry in lockstep.
+    return backoff / 2 + random.uniform(0, backoff / 2)
+
 
 VALIDATION_RETRY_PROMPT = "Your response was invalid. Please try again."
 
@@ -91,6 +121,21 @@ class _ResponseCache:
 _response_cache = _ResponseCache()
 
 
+# Published list prices in USD per million tokens, keyed by model. Rates for
+# models not listed here are not guessed: cost() returns None so an estimate is
+# never quietly wrong. Supply your own with Usage.set_rates().
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-fable-5": (10.00, 50.00),
+    "claude-opus-5": (5.00, 25.00),
+    "claude-opus-4-8": (5.00, 25.00),
+    "claude-opus-4-7": (5.00, 25.00),
+    "claude-opus-4-6": (5.00, 25.00),
+    "claude-sonnet-5": (3.00, 15.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5": (1.00, 5.00),
+}
+
+
 @dataclass
 class Usage:
     """Token usage and cost tracking."""
@@ -99,15 +144,10 @@ class Usage:
     output_tokens: int = 0
     total_tokens: int = 0
     requests: int = 0
-
-    # Approximate costs per 1M tokens (USD)
-    _costs: dict[str, tuple[float, float]] = field(
-        default_factory=lambda: {
-            "mistral": (0.25, 0.25),
-            "openai": (2.50, 10.00),
-            "anthropic": (3.00, 15.00),
-        }
-    )
+    model: str | None = None
+    provider: str | None = None
+    # Overrides the table above, as (input, output) USD per million tokens.
+    rates: tuple[float, float] | None = None
 
     def add(self, input_tokens: int, output_tokens: int) -> None:
         self.input_tokens += input_tokens
@@ -115,11 +155,18 @@ class Usage:
         self.total_tokens += input_tokens + output_tokens
         self.requests += 1
 
-    def cost(self, provider: str = "mistral") -> float:
-        rates = self._costs.get(provider, (1.0, 1.0))
-        input_cost = (self.input_tokens / 1_000_000) * rates[0]
-        output_cost = (self.output_tokens / 1_000_000) * rates[1]
-        return input_cost + output_cost
+    def set_rates(self, input_per_million: float, output_per_million: float) -> None:
+        """Price this usage with your own rates, in USD per million tokens."""
+        self.rates = (input_per_million, output_per_million)
+
+    def cost(self, model: str | None = None) -> float | None:
+        """Estimated spend in USD, or None when the model's rate is unknown."""
+        rates = self.rates or MODEL_PRICING.get(model or self.model or "")
+        if rates is None:
+            return None
+        return (self.input_tokens / 1_000_000) * rates[0] + (
+            self.output_tokens / 1_000_000
+        ) * rates[1]
 
     def reset(self) -> None:
         self.input_tokens = 0
@@ -294,7 +341,7 @@ class Agent:
             self.system_prompt = self._default_system_prompt()
 
         # Usage tracking
-        self.usage = Usage()
+        self.usage = Usage(model=self.model, provider=provider)
 
         # Hooks
         self.on_tool_call = on_tool_call
@@ -518,10 +565,14 @@ class Agent:
                     return result
                 except Exception as e:
                     last_error = e
-                    if attempt < self.retries:
-                        wait = 2**attempt
+                    if not _is_retryable(e):
                         if self.debug:
-                            print(f"[Retry {attempt + 1}] {e}. Waiting {wait}s...")
+                            print(f"[Error] {e}. Not retryable.")
+                        break
+                    if attempt < self.retries:
+                        wait = _retry_delay(e, attempt)
+                        if self.debug:
+                            print(f"[Retry {attempt + 1}] {e}. Waiting {wait:.1f}s...")
                         await asyncio.sleep(wait)
 
         raise last_error or RuntimeError("Request failed")
