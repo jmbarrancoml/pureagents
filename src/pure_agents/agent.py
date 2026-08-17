@@ -175,6 +175,34 @@ class Usage:
         self.requests = 0
 
 
+MAX_STEPS_MESSAGE = "Max steps reached without final answer."
+
+
+@dataclass
+class StreamEvent:
+    """One event from Agent.stream().
+
+    type is "text" for a content chunk, "tool_call" when the model asks for a
+    tool, "tool_result" once that tool has run, and "done" for the final answer.
+    """
+
+    type: str
+    content: str = ""
+    name: str | None = None
+    id: str | None = None
+    arguments: dict[str, Any] | None = None
+
+
+def _safe_arguments(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        parsed = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 class StructuredOutputError(ValueError):
     """The model's reply could not be turned into the requested dataclass."""
 
@@ -814,7 +842,7 @@ class Agent:
                 break
 
         self._auto_save()
-        return "Max steps reached without final answer."
+        return MAX_STEPS_MESSAGE
 
     def run_sync(
         self,
@@ -848,25 +876,77 @@ class Agent:
 
         return await asyncio.gather(*[run_one(p) for p in prompts])
 
-    async def stream(self, prompt: str) -> AsyncIterator[str]:
+    async def _stream_with_retry(
+        self,
+        model: str,
+        messages: list[Message],
+        tools: list[Tool] | None,
+        images: list[tuple[str, str]] | None = None,
+    ) -> AsyncIterator[tuple[str, Message | None]]:
+        last_error: Exception | None = None
+
+        attempts: list[tuple[Any, str]] = [(self.client, model)]
+        if self.fallback_client and self.fallback_model:
+            attempts.append((self.fallback_client, self.fallback_model))
+
+        for index, (client, client_model) in enumerate(attempts):
+            if index > 0 and self.debug:
+                print(f"[Fallback] Switching to {self.fallback} ({client_model})")
+
+            for attempt in range(self.retries + 1):
+                produced = False
+                try:
+                    async for chunk, msg in client.chat_stream(
+                        model=client_model,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=self.tool_choice,
+                        images=images,
+                    ):
+                        produced = True
+                        yield chunk, msg
+                    self.usage.add(client.last_input_tokens, client.last_output_tokens)
+                    return
+                except Exception as e:
+                    last_error = e
+                    # Once bytes have reached the caller there is no clean way
+                    # to start over, so only pre-first-chunk failures retry.
+                    if produced or not _is_retryable(e):
+                        raise
+                    if attempt < self.retries:
+                        wait = _retry_delay(e, attempt)
+                        if self.debug:
+                            print(f"[Retry {attempt + 1}] {e}. Waiting {wait:.1f}s...")
+                        await asyncio.sleep(wait)
+
+        raise last_error or RuntimeError("Request failed")
+
+    async def stream(
+        self,
+        prompt: str,
+        images: list[str] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream a run as typed events: text, tool_call, tool_result, done."""
         if not self.messages:
             self.messages = [Message(role="system", content=self.system_prompt)]
         self.messages.append(Message(role="user", content=prompt))
         self._trim_messages()
+
+        loaded_images = [_load_image(path) for path in images] if images else None
 
         for step in range(self.max_steps):
             if self.debug:
                 print(f"\n[Step {step + 1}/{self.max_steps}]")
 
             response: Message | None = None
-            async for chunk, msg in self.client.chat_stream(
+            async for chunk, msg in self._stream_with_retry(
                 model=self.model,
                 messages=self.messages,
                 tools=list(self.tools.values()) if self.tools else None,
-                tool_choice=self.tool_choice,
+                images=loaded_images if step == 0 else None,
             ):
                 if chunk:
-                    yield chunk
+                    yield StreamEvent(type="text", content=chunk)
                 if msg:
                     response = msg
 
@@ -875,11 +955,24 @@ class Agent:
 
             self.messages.append(response)
 
+            if response.content and self.on_thinking:
+                self.on_thinking(response.content)
+
             if not response.tool_calls:
                 if self.debug:
                     print("\n[Final]")
                 self._auto_save()
+                yield StreamEvent(type="done", content=response.content)
                 return
+
+            for index, call in enumerate(response.tool_calls):
+                function = call.get("function") or {}
+                yield StreamEvent(
+                    type="tool_call",
+                    name=function.get("name") or "unknown",
+                    id=call.get("id") or f"call_{index}",
+                    arguments=_safe_arguments(function.get("arguments")),
+                )
 
             results = await self._execute_tools_parallel(response.tool_calls)
 
@@ -892,6 +985,17 @@ class Agent:
                         name=tool_name,
                     )
                 )
+                yield StreamEvent(
+                    type="tool_result",
+                    name=tool_name,
+                    id=tool_id,
+                    content=result,
+                )
+
+            self._trim_messages()
+
+        self._auto_save()
+        yield StreamEvent(type="done", content=MAX_STEPS_MESSAGE)
 
 
 def clear_cache() -> None:

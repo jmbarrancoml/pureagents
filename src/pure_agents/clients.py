@@ -34,6 +34,34 @@ PROVIDERS = {
 }
 
 
+def _with_images(
+    messages: list[Message],
+    images: list[tuple[str, str]] | None,
+) -> list[dict[str, Any]]:
+    """Serialise messages, attaching images to the last user turn."""
+    serialised = [m.to_dict() for m in messages]
+    if not images:
+        return serialised
+
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].role != "user":
+            continue
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": messages[index].content}
+        ]
+        for data, media_type in images:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{data}"},
+                }
+            )
+        serialised[index]["content"] = content
+        break
+
+    return serialised
+
+
 @dataclass
 class LLMClient:
     """Simple LLM API client. Works with OpenAI-compatible APIs."""
@@ -80,28 +108,9 @@ class LLMClient:
         self.last_input_tokens = 0
         self.last_output_tokens = 0
         client = self._http()
-        # Convert messages, adding images to last user message
-        msg_list = []
-        for i, m in enumerate(messages):
-            msg_dict = m.to_dict()
-            # Add images to the last user message
-            if images and m.role == "user" and i == len(messages) - 1:
-                content = [{"type": "text", "text": m.content}]
-                for img_data, media_type in images:
-                    content.append(
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{media_type};base64,{img_data}"
-                            },
-                        }
-                    )
-                msg_dict["content"] = content
-            msg_list.append(msg_dict)
-
         payload: dict[str, Any] = {
             "model": model,
-            "messages": msg_list,
+            "messages": _with_images(messages, images),
         }
 
         if self.max_tokens:
@@ -139,6 +148,7 @@ class LLMClient:
         messages: list[Message],
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
         # Reset first: a response without a usage block used to leave the
         # previous call's numbers in place, which Agent then counted twice.
@@ -147,9 +157,14 @@ class LLMClient:
         client = self._http()
         payload: dict[str, Any] = {
             "model": model,
-            "messages": [m.to_dict() for m in messages],
+            "messages": _with_images(messages, images),
             "stream": True,
+            # Without this a streamed call reports no tokens at all.
+            "stream_options": {"include_usage": True},
         }
+
+        if self.max_tokens:
+            payload["max_tokens"] = self.max_tokens
 
         if tools:
             payload["tools"] = [t.to_dict() for t in tools]
@@ -178,6 +193,15 @@ class LLMClient:
                     break
 
                 data = json.loads(data_str)
+
+                if data.get("usage"):
+                    self.last_input_tokens = data["usage"].get("prompt_tokens", 0)
+                    self.last_output_tokens = data["usage"].get("completion_tokens", 0)
+
+                # The usage-only chunk carries an empty choices list.
+                if not data.get("choices"):
+                    continue
+
                 delta = data["choices"][0].get("delta", {})
 
                 if delta.get("content"):
@@ -420,8 +444,9 @@ class AnthropicClient:
         messages: list[Message],
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
+        images: list[tuple[str, str]] | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
-        system_prompt, converted_msgs = self._convert_messages(messages)
+        system_prompt, converted_msgs = self._convert_messages(messages, images)
 
         # Reset first: a response without a usage block used to leave the
         # previous call's numbers in place, which Agent then counted twice.
@@ -470,7 +495,15 @@ class AnthropicClient:
                 data = json.loads(data_str)
                 event_type = data.get("type", "")
 
-                if event_type == "content_block_start":
+                if event_type == "message_start":
+                    usage = data.get("message", {}).get("usage", {})
+                    self.last_input_tokens = usage.get("input_tokens", 0)
+                    self.last_output_tokens = usage.get("output_tokens", 0)
+                elif event_type == "message_delta":
+                    usage = data.get("usage", {})
+                    if "output_tokens" in usage:
+                        self.last_output_tokens = usage["output_tokens"]
+                elif event_type == "content_block_start":
                     block = data.get("content_block", {})
                     if block.get("type") == "tool_use":
                         current_tool = {
@@ -493,6 +526,8 @@ class AnthropicClient:
                             )
                 elif event_type == "content_block_stop":
                     if current_tool:
+                        if not current_tool["function"]["arguments"]:
+                            current_tool["function"]["arguments"] = "{}"
                         tool_calls.append(current_tool)
                         current_tool = None
 

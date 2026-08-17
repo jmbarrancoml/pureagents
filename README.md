@@ -96,8 +96,16 @@ async for event in agent.stream("Write a poem"):
     if event.type == "text":
         print(event.content, end="", flush=True)
     elif event.type == "tool_call":
-        print(f"\nCalling {event.name}...")
+        print(f"\nCalling {event.name} with {event.arguments}...")
+    elif event.type == "tool_result":
+        print(f"-> {event.content}")
+    elif event.type == "done":
+        print(f"\n[{len(event.content)} characters]")
 ```
+
+Every event is a `StreamEvent` with `type`, `content`, `name`, `id` and
+`arguments`. Streaming goes through the same retries, timeout, fallback and
+token accounting as `run()`.
 
 ## Memory
 

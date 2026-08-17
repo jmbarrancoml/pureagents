@@ -148,9 +148,11 @@ async for event in agent.stream("Write a story"):
     if event.type == "text":
         print(event.content, end="", flush=True)
     elif event.type == "tool_call":
-        print(f"\nCalling {event.name}({event.args})")
+        print(f"\nCalling {event.name}({event.arguments})")
     elif event.type == "tool_result":
-        print(f"\nResult: {event.result}")
+        print(f"\nResult: {event.content}")
+    elif event.type == "done":
+        print(f"\nFinal answer: {event.content}")
 ```
 
 ### Hooks

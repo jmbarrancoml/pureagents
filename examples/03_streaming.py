@@ -16,11 +16,16 @@ async def main():
 
     print("Agent: ", end="", flush=True)
 
-    # Stream the response token by token
-    async for chunk in agent.stream("Tell me about the history of Python"):
-        print(chunk, end="", flush=True)
-
-    print()  # Newline at the end
+    # Stream the run as typed events
+    async for event in agent.stream("Tell me about the history of Python"):
+        if event.type == "text":
+            print(event.content, end="", flush=True)
+        elif event.type == "tool_call":
+            print(f"\n[calling {event.name} with {event.arguments}]")
+        elif event.type == "tool_result":
+            print(f"[{event.name} returned: {event.content}]\n", end="", flush=True)
+        elif event.type == "done":
+            print()  # Newline at the end
 
 
 if __name__ == "__main__":

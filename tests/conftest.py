@@ -41,7 +41,27 @@ class FakeLLM:
         status_code: int = 200,
         headers: dict[str, str] | None = None,
     ) -> FakeLLM:
-        self._queue.append((status_code, payload, headers or {}))
+        def build(
+            status_code=status_code, payload=payload, headers=headers or {}
+        ) -> httpx.Response:
+            return httpx.Response(status_code, json=payload, headers=headers)
+
+        self._queue.append(build)
+        return self
+
+    def queue_sse(self, events: list[dict[str, Any] | str]) -> FakeLLM:
+        """Queue a server-sent-event stream body."""
+        body = "".join(
+            f"data: {event if isinstance(event, str) else json.dumps(event)}\n\n"
+            for event in events
+        )
+
+        def build(body=body) -> httpx.Response:
+            return httpx.Response(
+                200, text=body, headers={"content-type": "text/event-stream"}
+            )
+
+        self._queue.append(build)
         return self
 
     def queue_error(
@@ -77,8 +97,7 @@ class FakeLLM:
             item = self._queue.popleft()
             if isinstance(item, Exception):
                 raise item
-            status_code, payload, headers = item
-            return httpx.Response(status_code, json=payload, headers=headers)
+            return item()
 
         return httpx.MockTransport(handler)
 
@@ -144,6 +163,117 @@ def anthropic_tool_use(
     use_id: str = "toolu_1",
 ) -> dict[str, Any]:
     return {"id": use_id, "name": name, "input": tool_input or {}}
+
+
+def openai_sse(
+    text_chunks: list[str] | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    prompt_tokens: int = 10,
+    completion_tokens: int = 5,
+) -> list[dict[str, Any] | str]:
+    """Build an OpenAI-compatible SSE stream."""
+    events: list[dict[str, Any] | str] = []
+
+    for chunk in text_chunks or []:
+        events.append({"choices": [{"delta": {"content": chunk}}]})
+
+    for index, call in enumerate(tool_calls or []):
+        function = call["function"]
+        events.append(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": index,
+                                    "id": call["id"],
+                                    "function": {"name": function["name"]},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        )
+        # Arguments arrive split across deltas, as real providers send them.
+        raw = function["arguments"]
+        midpoint = len(raw) // 2
+        for piece in (raw[:midpoint], raw[midpoint:]):
+            events.append(
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {"index": index, "function": {"arguments": piece}}
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+
+    events.append(
+        {
+            "choices": [],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            },
+        }
+    )
+    events.append("[DONE]")
+    return events
+
+
+def anthropic_sse(
+    text_chunks: list[str] | None = None,
+    tool_uses: list[dict[str, Any]] | None = None,
+    input_tokens: int = 10,
+    output_tokens: int = 5,
+) -> list[dict[str, Any] | str]:
+    """Build an Anthropic SSE stream."""
+    events: list[dict[str, Any] | str] = [
+        {
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": input_tokens, "output_tokens": 0}},
+        }
+    ]
+
+    for chunk in text_chunks or []:
+        events.append(
+            {
+                "type": "content_block_delta",
+                "delta": {"type": "text_delta", "text": chunk},
+            }
+        )
+
+    for use in tool_uses or []:
+        events.append(
+            {
+                "type": "content_block_start",
+                "content_block": {
+                    "type": "tool_use",
+                    "id": use["id"],
+                    "name": use["name"],
+                },
+            }
+        )
+        events.append(
+            {
+                "type": "content_block_delta",
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": json.dumps(use.get("input", {})),
+                },
+            }
+        )
+        events.append({"type": "content_block_stop"})
+
+    events.append({"type": "message_delta", "usage": {"output_tokens": output_tokens}})
+    events.append({"type": "message_stop"})
+    return events
 
 
 @pytest.fixture
