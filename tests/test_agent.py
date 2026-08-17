@@ -103,7 +103,7 @@ class TestAgent:
     def test_anthropic_provider(self):
         agent = Agent(api_key="test-key", provider="anthropic")
         assert agent.provider == "anthropic"
-        assert agent.model == "claude-sonnet-4-5-20250929"
+        assert agent.model == "claude-opus-5"
         assert agent.client.base_url == "https://api.anthropic.com/v1"
 
 

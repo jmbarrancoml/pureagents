@@ -81,10 +81,10 @@ All features are optional. One parameter enables one feature.
 agent = Agent(provider="mistral", model="mistral-large-latest")
 
 # OpenAI
-agent = Agent(provider="openai", model="gpt-4o")
+agent = Agent(provider="openai", model="gpt-5.2-instant")
 
 # Anthropic
-agent = Agent(provider="anthropic", model="claude-sonnet-4-20250514")
+agent = Agent(provider="anthropic", model="claude-opus-5")
 ```
 
 API keys via environment variables (`MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) or `api_key=`.

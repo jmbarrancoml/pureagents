@@ -61,7 +61,7 @@ Configure the routing LLM:
 router = Router(
     agents={"a": agent_a, "b": agent_b},
     provider="openai",
-    model="gpt-4o-mini",
+    model="gpt-5.2-instant",
 )
 ```
 

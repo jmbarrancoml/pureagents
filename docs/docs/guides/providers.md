@@ -12,7 +12,7 @@ pureagents supports multiple LLM providers.
 |----------|---------------|---------------------|
 | `mistral` | `mistral-large-latest` | `MISTRAL_API_KEY` |
 | `openai` | `gpt-5.2-instant` | `OPENAI_API_KEY` |
-| `anthropic` | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` |
+| `anthropic` | `claude-opus-5` | `ANTHROPIC_API_KEY` |
 
 ## Mistral (default)
 
@@ -47,7 +47,7 @@ agent = Agent(provider="openai", model="gpt-5.2-codex")  # Code
 agent = Agent(provider="anthropic")
 
 # Claude variants
-agent = Agent(provider="anthropic", model="claude-sonnet-4-5-20250929")
+agent = Agent(provider="anthropic", model="claude-opus-5")
 agent = Agent(provider="anthropic", model="claude-opus-4-5-20251101")
 ```
 

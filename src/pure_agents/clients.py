@@ -22,13 +22,13 @@ PROVIDERS = {
     "openai": {
         "base_url": "https://api.openai.com/v1",
         "env_var": "OPENAI_API_KEY",
-        "default_model": "gpt-4o",
+        "default_model": "gpt-5.2-instant",
         "client": "openai",
     },
     "anthropic": {
         "base_url": "https://api.anthropic.com/v1",
         "env_var": "ANTHROPIC_API_KEY",
-        "default_model": "claude-sonnet-4-20250514",
+        "default_model": "claude-opus-5",
         "client": "anthropic",
     },
 }
