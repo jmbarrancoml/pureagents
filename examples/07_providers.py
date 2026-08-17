@@ -33,7 +33,7 @@ async def main():
     # Use a specific model
     if os.environ.get("OPENAI_API_KEY"):
         print("=== OpenAI (specific model) ===")
-        agent = Agent(provider="openai", model="gpt-5.2-instant")
+        agent = Agent(provider="openai", model="gpt-5.6-luna")
         response = await agent.run(prompt)
         print(f"{response}\n")
 

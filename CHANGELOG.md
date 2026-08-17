@@ -20,8 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `Usage.cost()` takes a model, not a provider, and returns `None` when the
   model has no published rate on file. Use `Usage.set_rates()` for your own.
 - Session ids are validated: letters, digits, dots, dashes and underscores.
-- Default models are now `mistral-large-latest`, `gpt-5.2-instant` and
-  `claude-opus-5`.
+- Default models are now `mistral-large-latest`, `gpt-5.6-luna` and
+  `claude-sonnet-5`: the cheapest current-generation tier each provider
+  offers that still drives a tool loop reliably.
 
 ### Added
 

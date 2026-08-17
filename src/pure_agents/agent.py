@@ -121,18 +121,37 @@ class _ResponseCache:
 _response_cache = _ResponseCache()
 
 
-# Published list prices in USD per million tokens, keyed by model. Rates for
-# models not listed here are not guessed: cost() returns None so an estimate is
-# never quietly wrong. Supply your own with Usage.set_rates().
+# List prices in USD per million tokens, checked against each provider's own
+# pricing page on 2026-08-17. Rates move and models come and go, so a model
+# that is not listed makes cost() return None rather than guess. Override any
+# entry, or price an unlisted model, with Usage.set_rates().
 MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # Anthropic
     "claude-fable-5": (10.00, 50.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-opus-4-8": (5.00, 25.00),
     "claude-opus-4-7": (5.00, 25.00),
     "claude-opus-4-6": (5.00, 25.00),
-    "claude-sonnet-5": (3.00, 15.00),
+    # Introductory rate through 2026-08-31; the list price is 3.00 / 15.00.
+    "claude-sonnet-5": (2.00, 10.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-haiku-4-5": (1.00, 5.00),
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
+    # OpenAI
+    "gpt-5.6-sol": (5.00, 30.00),
+    "gpt-5.6-terra": (2.00, 12.00),
+    "gpt-5.6-luna": (0.20, 1.20),
+    "gpt-5.5": (5.00, 30.00),
+    "gpt-5.4": (2.50, 15.00),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
+    # Mistral, under both the moving alias and the pinned id it resolves to
+    "mistral-large-latest": (0.50, 1.50),
+    "mistral-large-2512": (0.50, 1.50),
+    "mistral-medium-latest": (1.50, 7.50),
+    "mistral-medium-3505": (1.50, 7.50),
+    "mistral-small-latest": (0.15, 0.60),
+    "mistral-small-2603": (0.15, 0.60),
 }
 
 

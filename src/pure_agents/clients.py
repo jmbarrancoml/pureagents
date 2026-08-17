@@ -12,6 +12,8 @@ import httpx
 from pure_agents.message import Message
 from pure_agents.tool import Tool
 
+# Defaults are the cheapest current-generation tier each provider offers that
+# still drives a tool loop reliably. Override with Agent(model=...).
 PROVIDERS = {
     "mistral": {
         "base_url": "https://api.mistral.ai/v1",
@@ -22,13 +24,13 @@ PROVIDERS = {
     "openai": {
         "base_url": "https://api.openai.com/v1",
         "env_var": "OPENAI_API_KEY",
-        "default_model": "gpt-5.2-instant",
+        "default_model": "gpt-5.6-luna",
         "client": "openai",
     },
     "anthropic": {
         "base_url": "https://api.anthropic.com/v1",
         "env_var": "ANTHROPIC_API_KEY",
-        "default_model": "claude-opus-5",
+        "default_model": "claude-sonnet-5",
         "client": "anthropic",
     },
 }

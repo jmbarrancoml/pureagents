@@ -127,5 +127,12 @@ class TestCost:
         agent = Agent(api_key="k", provider="anthropic")
         agent.usage.add(1_000_000, 0)
 
-        assert agent.usage.model == "claude-opus-5"
-        assert agent.usage.cost() == pytest.approx(5.0)
+        assert agent.usage.model == "claude-sonnet-5"
+        assert agent.usage.cost() == pytest.approx(2.0)
+
+    @pytest.mark.parametrize("provider", ["mistral", "openai", "anthropic"])
+    def test_every_default_model_has_a_rate(self, provider):
+        agent = Agent(api_key="k", provider=provider)
+        agent.usage.add(1_000_000, 1_000_000)
+
+        assert agent.usage.cost() is not None

@@ -7,7 +7,7 @@ async def main():
     # Use a vision-capable model
     agent = Agent(
         provider="openai",
-        model="gpt-5.2-instant",  # Vision-capable model
+        model="gpt-5.6-luna",  # Vision-capable model
     )
 
     # Describe an image
@@ -27,7 +27,7 @@ async def main():
     # With Anthropic
     agent_claude = Agent(
         provider="anthropic",
-        model="claude-opus-5",
+        model="claude-sonnet-5",
     )
 
     result = await agent_claude.run(

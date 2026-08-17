@@ -61,7 +61,7 @@ class TestFallback:
         agent = Agent(api_key="mistral-key", provider="mistral", fallback="anthropic")
 
         assert agent.fallback_client.api_key == "anthropic-key"
-        assert agent.fallback_model == "claude-opus-5"
+        assert agent.fallback_model == "claude-sonnet-5"
         assert agent.model == "mistral-large-latest"
 
     def test_fallback_model_can_be_overridden(self, monkeypatch):
@@ -103,7 +103,7 @@ class TestFallback:
         # The bug this guards: the primary's model used to be sent to the
         # fallback provider, which does not serve it.
         assert primary.last_request()["model"] == "mistral-large-latest"
-        assert secondary.last_request()["model"] == "claude-opus-5"
+        assert secondary.last_request()["model"] == "claude-sonnet-5"
 
     async def test_primary_is_used_when_it_succeeds(self):
         agent = Agent(

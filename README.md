@@ -94,13 +94,25 @@ Failures are exceptions, not strings that look like answers:
 agent = Agent(provider="mistral", model="mistral-large-latest")
 
 # OpenAI
-agent = Agent(provider="openai", model="gpt-5.2-instant")
+agent = Agent(provider="openai", model="gpt-5.6-luna")
 
 # Anthropic
-agent = Agent(provider="anthropic", model="claude-opus-5")
+agent = Agent(provider="anthropic", model="claude-sonnet-5")
 ```
 
 API keys via environment variables (`MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) or `api_key=`.
+
+Defaults are the cheapest current-generation tier that still drives a tool loop
+reliably. Pass `model=` for anything else:
+
+| Provider | Default | $/1M in | $/1M out | Step up to |
+|----------|---------|--------:|---------:|------------|
+| `mistral` | `mistral-large-latest` | 0.50 | 1.50 | `mistral-medium-latest` |
+| `openai` | `gpt-5.6-luna` | 0.20 | 1.20 | `gpt-5.6-terra`, `gpt-5.6-sol` |
+| `anthropic` | `claude-sonnet-5` | 2.00 | 10.00 | `claude-opus-5`, `claude-fable-5` |
+
+Rates checked against each provider's pricing page on 2026-08-17.
+`agent.usage.cost()` uses the same table.
 
 ## Streaming
 

@@ -169,7 +169,7 @@ class TestStreamingParity:
         events = await collect(agent)
 
         assert events[-1].content == "rescued"
-        assert secondary.last_request()["model"] == "claude-opus-5"
+        assert secondary.last_request()["model"] == "claude-sonnet-5"
 
     async def test_max_steps_ends_the_stream(self, make_agent):
         agent, fake = make_agent(tools=[add], max_steps=2)
