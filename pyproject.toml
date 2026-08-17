@@ -57,3 +57,6 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Tests import shared helpers as `tests.conftest`. Bare `pytest` does not put
+# the rootdir on sys.path the way `python -m pytest` does, so say it outright.
+pythonpath = ["."]
