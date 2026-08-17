@@ -41,6 +41,8 @@ class LLMClient:
     api_key: str
     base_url: str = "https://api.mistral.ai/v1"
     timeout: float = 60.0
+    # Optional here: OpenAI-compatible APIs pick their own ceiling.
+    max_tokens: int | None = None
     last_input_tokens: int = 0
     last_output_tokens: int = 0
     # Injectable for tests; None uses httpx's real network transport.
@@ -81,6 +83,9 @@ class LLMClient:
                 "model": model,
                 "messages": msg_list,
             }
+
+            if self.max_tokens:
+                payload["max_tokens"] = self.max_tokens
 
             if tools:
                 payload["tools"] = [t.to_dict() for t in tools]
@@ -185,6 +190,23 @@ class LLMClient:
                 )
 
 
+class TruncatedResponseError(RuntimeError):
+    """The provider stopped mid-response, leaving unusable output."""
+
+
+def _is_tool_result_message(message: dict[str, Any]) -> bool:
+    content = message.get("content")
+    return (
+        message.get("role") == "user"
+        and isinstance(content, list)
+        and bool(content)
+        and content[0].get("type") == "tool_result"
+    )
+
+
+DEFAULT_MAX_TOKENS = 4096
+
+
 @dataclass
 class AnthropicClient:
     """Anthropic API client."""
@@ -192,6 +214,7 @@ class AnthropicClient:
     api_key: str
     base_url: str = "https://api.anthropic.com/v1"
     timeout: float = 60.0
+    max_tokens: int = DEFAULT_MAX_TOKENS
     last_input_tokens: int = 0
     last_output_tokens: int = 0
     # Injectable for tests; None uses httpx's real network transport.
@@ -245,18 +268,18 @@ class AnthropicClient:
                 else:
                     converted.append({"role": "assistant", "content": msg.content})
             elif msg.role == "tool":
-                converted.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": msg.tool_call_id,
-                                "content": msg.content,
-                            }
-                        ],
-                    }
-                )
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": msg.tool_call_id,
+                    "content": msg.content,
+                }
+                # Anthropic requires alternating roles, so every result from one
+                # assistant turn goes into a single user message. Emitting one
+                # message per result made parallel tool calls a 400.
+                if converted and _is_tool_result_message(converted[-1]):
+                    converted[-1]["content"].append(block)
+                else:
+                    converted.append({"role": "user", "content": [block]})
 
         return system_prompt, converted
 
@@ -287,7 +310,7 @@ class AnthropicClient:
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": converted_msgs,
-                "max_tokens": 4096,
+                "max_tokens": self.max_tokens,
             }
 
             if system_prompt:
@@ -333,6 +356,16 @@ class AnthropicClient:
                     }
                 )
 
+        # A response cut off at max_tokens leaves tool_use input truncated, so
+        # say so instead of handing the agent a half-formed call.
+        if data.get("stop_reason") == "max_tokens":
+            if tool_calls:
+                raise TruncatedResponseError(
+                    f"Anthropic hit max_tokens ({self.max_tokens}) mid tool call. "
+                    "Raise Agent(max_tokens=...)."
+                )
+            content += f"\n\n[Response truncated at max_tokens={self.max_tokens}]"
+
         return Message(
             role="assistant",
             content=content,
@@ -352,7 +385,7 @@ class AnthropicClient:
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": converted_msgs,
-                "max_tokens": 4096,
+                "max_tokens": self.max_tokens,
                 "stream": True,
             }
 

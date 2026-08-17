@@ -240,6 +240,7 @@ class Agent:
         tools: list[Tool] | None = None,
         api_key: str | None = None,
         max_steps: int = 10,
+        max_tokens: int | None = None,
         system_prompt: str | None = None,
         template: str | None = None,
         debug: bool = False,
@@ -279,6 +280,7 @@ class Agent:
         self.enabled_groups = enabled_groups
         self.api_key = api_key or os.environ.get(provider_config["env_var"], "")
         self.max_steps = max_steps
+        self.max_tokens = max_tokens
         self.debug = debug
 
         # System prompt
@@ -358,8 +360,15 @@ class Agent:
     ) -> LLMClient | AnthropicClient:
         config = PROVIDERS[provider]
         if config.get("client") == "anthropic":
-            return AnthropicClient(api_key=api_key, base_url=config["base_url"])
-        return LLMClient(api_key=api_key, base_url=config["base_url"])
+            client = AnthropicClient(api_key=api_key, base_url=config["base_url"])
+            if self.max_tokens:
+                client.max_tokens = self.max_tokens
+            return client
+        return LLMClient(
+            api_key=api_key,
+            base_url=config["base_url"],
+            max_tokens=self.max_tokens,
+        )
 
     @property
     def tools(self) -> dict[str, Tool]:
