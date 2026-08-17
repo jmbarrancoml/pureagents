@@ -6,6 +6,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- `Agent(system_prompt=...)` is now `Agent(system=...)`, and the attribute is
+  `agent.system`.
+- `agent.stream()` yields `StreamEvent` objects instead of plain strings. Each
+  has `type` (`text`, `tool_call`, `tool_result`, `done`), `content`, `name`,
+  `id` and `arguments`.
+- Running out of steps raises `MaxStepsError` instead of returning the string
+  "Max steps reached without final answer."
+- A reply that will not parse into the requested dataclass raises
+  `StructuredOutputError` instead of a bare `JSONDecodeError` or `TypeError`.
+- `Usage.cost()` takes a model, not a provider, and returns `None` when the
+  model has no published rate on file. Use `Usage.set_rates()` for your own.
+- Session ids are validated: letters, digits, dots, dashes and underscores.
+- Default models are now `mistral-large-latest`, `gpt-5.6-luna` and
+  `claude-sonnet-5`: the cheapest current-generation tier each provider
+  offers that still drives a tool loop reliably.
+
+### Added
+
+- `Agent(max_tokens=)`, `fallback_model=` and `fallback_api_key=`.
+- `Agent.aclose()` and async context manager support.
+- `batch(prompts, max_concurrency=5)`.
+- `set_cache_size()`.
+- `Usage.set_rates()`.
+- `Graph` uses the first node added as its entry point.
+
+### Fixed
+
+- An explicit `api_key=` no longer loses to the environment variable.
+- The fallback provider uses its own API key and its own model instead of
+  sending the primary provider's model to a different API.
+- The response cache keys on the system prompt, provider and tool set, is
+  bounded, keeps the conversation consistent on a hit, and honours `output=`.
+- A malformed tool-call argument string is reported back to the model rather
+  than crashing the run, and one failing call no longer cancels its siblings.
+- `max_messages` no longer separates a tool result from its tool call.
+- `@tool(timeout=)` works on sync functions, and parallel tool calls really run
+  in parallel.
+- Type hints become correct JSON Schema: typed lists and dicts, `Optional`,
+  `Literal`, `Enum` and nested dataclasses. Only parameters without defaults
+  are marked required.
+- Parallel tool calls against Anthropic no longer produce consecutive user
+  messages.
+- `Agent(timeout=)` reaches httpx instead of being capped at 60 seconds, and
+  HTTP connections are pooled instead of rebuilt per request.
+- Retries cover 429, 5xx and network failures only, honour `Retry-After`, and
+  are jittered.
+- Streaming goes through retries, timeout, fallback and token accounting, and
+  supports images.
+- `batch()` clones the full agent configuration and bounds concurrency.
+- Session files are written atomically.
+
 ## [0.1.0] - 2026-02-02
 
 ### Added

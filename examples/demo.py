@@ -25,8 +25,9 @@ async def main():
 
     # Streaming
     print("\n=== Streaming ===")
-    async for chunk in agent.stream("Explain why 25 * 4 equals 100"):
-        print(chunk, end="", flush=True)
+    async for event in agent.stream("Explain why 25 * 4 equals 100"):
+        if event.type == "text":
+            print(event.content, end="", flush=True)
     print()
 
 

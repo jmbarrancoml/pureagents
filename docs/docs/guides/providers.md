@@ -11,8 +11,8 @@ pureagents supports multiple LLM providers.
 | Provider | Default model | Environment variable |
 |----------|---------------|---------------------|
 | `mistral` | `mistral-large-latest` | `MISTRAL_API_KEY` |
-| `openai` | `gpt-5.2-instant` | `OPENAI_API_KEY` |
-| `anthropic` | `claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` |
+| `openai` | `gpt-5.6-luna` | `OPENAI_API_KEY` |
+| `anthropic` | `claude-sonnet-5` | `ANTHROPIC_API_KEY` |
 
 ## Mistral (default)
 
@@ -34,11 +34,10 @@ agent = Agent(model="mistral-small-latest")
 ```python
 agent = Agent(provider="openai")
 
-# GPT-5.2 variants
-agent = Agent(provider="openai", model="gpt-5.2-instant")   # Fast
-agent = Agent(provider="openai", model="gpt-5.2-thinking")  # Reasoning
-agent = Agent(provider="openai", model="gpt-5.2-pro")       # Best quality
-agent = Agent(provider="openai", model="gpt-5.2-codex")     # Code
+# GPT-5.6 tiers, cheapest first
+agent = Agent(provider="openai", model="gpt-5.6-luna")  # Default
+agent = Agent(provider="openai", model="gpt-5.6-terra")  # Balanced
+agent = Agent(provider="openai", model="gpt-5.6-sol")  # Highest capability
 ```
 
 ## Anthropic
@@ -46,9 +45,11 @@ agent = Agent(provider="openai", model="gpt-5.2-codex")     # Code
 ```python
 agent = Agent(provider="anthropic")
 
-# Claude variants
-agent = Agent(provider="anthropic", model="claude-sonnet-4-5-20250929")
-agent = Agent(provider="anthropic", model="claude-opus-4-5-20251101")
+# Claude tiers, cheapest first
+agent = Agent(provider="anthropic", model="claude-haiku-4-5")  # Fastest
+agent = Agent(provider="anthropic", model="claude-sonnet-5")  # Default
+agent = Agent(provider="anthropic", model="claude-opus-5")  # Agentic coding
+agent = Agent(provider="anthropic", model="claude-fable-5")  # Long-running agents
 ```
 
 ## Explicit API key
@@ -56,10 +57,7 @@ agent = Agent(provider="anthropic", model="claude-opus-4-5-20251101")
 You can pass the API key directly:
 
 ```python
-agent = Agent(
-    provider="openai",
-    api_key="sk-..."
-)
+agent = Agent(provider="openai", api_key="sk-...")
 ```
 
 :::warning
@@ -73,8 +71,5 @@ For self-hosted or proxy endpoints, modify the client directly:
 ```python
 from pure_agents.clients import LLMClient
 
-client = LLMClient(
-    api_key="your-key",
-    base_url="https://your-proxy.com/v1"
-)
+client = LLMClient(api_key="your-key", base_url="https://your-proxy.com/v1")
 ```

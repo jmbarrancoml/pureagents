@@ -15,25 +15,28 @@ async def main():
     # Create specialised agents
     coder = Agent(
         template="coder",
-        system_prompt="You are an expert programmer. Write clean, working code.",
+        system="You are an expert programmer. Write clean, working code.",
     )
 
     writer = Agent(
         template="creative",
-        system_prompt="You are a creative writer. Write engaging, vivid prose.",
+        system="You are a creative writer. Write engaging, vivid prose.",
     )
 
     analyst = Agent(
         template="analyst",
-        system_prompt="You are a data analyst. Provide clear, logical analysis.",
+        system="You are a data analyst. Provide clear, logical analysis.",
     )
 
     # --- Option 1: Function-based routing ---
+    CODE_WORDS = ["code", "function", "program", "script"]
+    CREATIVE_WORDS = ["write", "story", "poem", "creative"]
+
     def route_fn(prompt: str) -> str:
         prompt_lower = prompt.lower()
-        if any(word in prompt_lower for word in ["code", "function", "program", "script"]):
+        if any(word in prompt_lower for word in CODE_WORDS):
             return "coder"
-        if any(word in prompt_lower for word in ["write", "story", "poem", "creative"]):
+        if any(word in prompt_lower for word in CREATIVE_WORDS):
             return "writer"
         return "analyst"
 

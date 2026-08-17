@@ -9,6 +9,7 @@ from pure_agents import Agent, tool
 def slow_search(query: str) -> str:
     """A slow search that might timeout."""
     import time
+
     time.sleep(2)  # Simulate slow API
     return f"Results for '{query}'"
 
@@ -16,11 +17,13 @@ def slow_search(query: str) -> str:
 async def main():
     # === Retry with exponential backoff ===
     print("=== Retry Example ===")
-    agent = Agent(
+    agent_with_retries = Agent(
         retries=3,  # Retry up to 3 times on failure
         debug=True,
     )
     # If the API fails, it will retry with 1s, 2s, 4s delays
+    response = await agent_with_retries.run("What is the capital of Spain?")
+    print(f"Response: {response}")
 
     # === Timeout ===
     print("\n=== Timeout Example ===")

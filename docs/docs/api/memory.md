@@ -78,6 +78,7 @@ Each file contains:
 from pure_agents import Memory, Message
 import sqlite3
 
+
 class SqliteMemory(Memory):
     def __init__(self, db_path: str):
         self.conn = sqlite3.connect(db_path)
@@ -91,15 +92,13 @@ class SqliteMemory(Memory):
     def save(self, session_id: str, messages: list[Message]) -> None:
         data = json.dumps([m.to_dict() for m in messages])
         self.conn.execute(
-            "INSERT OR REPLACE INTO sessions VALUES (?, ?)",
-            (session_id, data)
+            "INSERT OR REPLACE INTO sessions VALUES (?, ?)", (session_id, data)
         )
         self.conn.commit()
 
     def load(self, session_id: str) -> list[Message] | None:
         cursor = self.conn.execute(
-            "SELECT messages FROM sessions WHERE id = ?",
-            (session_id,)
+            "SELECT messages FROM sessions WHERE id = ?", (session_id,)
         )
         row = cursor.fetchone()
         if not row:
@@ -118,8 +117,5 @@ class SqliteMemory(Memory):
 Usage:
 
 ```python
-agent = Agent(
-    session="my-chat",
-    memory=SqliteMemory("conversations.db")
-)
+agent = Agent(session="my-chat", memory=SqliteMemory("conversations.db"))
 ```

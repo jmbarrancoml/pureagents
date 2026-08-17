@@ -31,7 +31,7 @@ async def main():
     agent = Agent(
         tools=[get_weather, set_reminder],
         session="chatbot-demo",
-        system_prompt=(
+        system=(
             "You are a helpful assistant. You can check weather and set reminders. "
             "Be friendly and concise."
         ),
@@ -50,8 +50,9 @@ async def main():
 
             # Stream the response
             print("Bot: ", end="", flush=True)
-            async for chunk in agent.stream(user_input):
-                print(chunk, end="", flush=True)
+            async for event in agent.stream(user_input):
+                if event.type == "text":
+                    print(event.content, end="", flush=True)
             print()
 
         except KeyboardInterrupt:

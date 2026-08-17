@@ -81,25 +81,19 @@ Message(role="assistant", content="The answer is 4.")
 Message(
     role="assistant",
     content="",
-    tool_calls=[{
-        "id": "call_123",
-        "function": {
-            "name": "calculate",
-            "arguments": '{"expression": "2 + 2"}'
+    tool_calls=[
+        {
+            "id": "call_123",
+            "function": {"name": "calculate", "arguments": '{"expression": "2 + 2"}'},
         }
-    }]
+    ],
 )
 ```
 
 ### Tool message
 
 ```python
-Message(
-    role="tool",
-    content="4",
-    tool_call_id="call_123",
-    name="calculate"
-)
+Message(role="tool", content="4", tool_call_id="call_123", name="calculate")
 ```
 
 ## Accessing conversation history

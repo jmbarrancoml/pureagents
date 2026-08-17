@@ -56,6 +56,7 @@ def save_description(text: str) -> str:
         f.write(text)
     return "Saved!"
 
+
 agent = Agent(provider="openai", tools=[save_description])
 
 result = await agent.run(

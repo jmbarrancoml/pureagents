@@ -103,8 +103,8 @@ State is a dict that flows through nodes:
 ```python
 from pure_agents import Agent, Graph, END
 
-researcher = Agent(system_prompt="Research the topic.")
-writer = Agent(system_prompt="Write a summary.")
+researcher = Agent(system="Research the topic.")
+writer = Agent(system="Write a summary.")
 
 graph = Graph()
 graph.add_node("research", researcher)
@@ -123,6 +123,7 @@ def should_continue(state: dict) -> str:
     if "done" in state.get("output", "").lower():
         return END
     return "process"
+
 
 graph.add_conditional_edge("check", should_continue)
 ```

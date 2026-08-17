@@ -14,7 +14,7 @@ Most agent frameworks are over-engineered. Thousands of lines, dozens of abstrac
 **pureagents is different:**
 
 - **Powerful**: All the features you need, from basics to production
-- **Simple**: ~1,500 lines. Read the entire codebase in 30 minutes
+- **Simple**: ~2,200 lines. Read the entire codebase in 30 minutes
 - **Elegant**: Clean API. One decorator, one class. No magic
 - **Buildable**: Fork it, modify it, build on top. Not a black box
 
@@ -71,10 +71,12 @@ Many features ≠ complicated. Every feature is optional and modular.
 ```python
 from pure_agents import Agent, tool
 
+
 @tool
 def search(query: str) -> str:
     """Search the web."""
     return f"Results for {query}..."
+
 
 agent = Agent(tools=[search])
 result = await agent.run("Find the weather in Madrid")

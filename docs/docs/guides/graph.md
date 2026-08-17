@@ -11,8 +11,8 @@ Multi-agent workflows with conditional routing. Similar to LangGraph but simpler
 ```python
 from pure_agents import Agent, Graph, END
 
-researcher = Agent(system_prompt="Research the topic.")
-writer = Agent(system_prompt="Write a summary.")
+researcher = Agent(system="Research the topic.")
+writer = Agent(system="Write a summary.")
 
 graph = Graph()
 graph.add_node("research", researcher)
@@ -59,6 +59,7 @@ def should_revise(state: dict) -> str:
         return "fix"  # Go to fix node
     return END  # Finish
 
+
 graph.add_conditional_edge("review", should_revise)
 ```
 
@@ -71,6 +72,7 @@ def process(state: dict) -> dict:
     state["output"] = state["input"].upper()
     return state
 
+
 graph.add_node("process", process)
 ```
 
@@ -79,9 +81,9 @@ graph.add_node("process", process)
 ```python
 from pure_agents import Agent, Graph, END
 
-researcher = Agent(system_prompt="Find facts about the topic.")
-writer = Agent(system_prompt="Write a clear summary.")
-reviewer = Agent(system_prompt="Review. Say APPROVED or NEEDS_REVISION.")
+researcher = Agent(system="Find facts about the topic.")
+writer = Agent(system="Write a clear summary.")
+reviewer = Agent(system="Review. Say APPROVED or NEEDS_REVISION.")
 
 graph = Graph()
 
@@ -92,10 +94,12 @@ graph.add_node("review", reviewer)
 graph.add_edge("research", "write")
 graph.add_edge("write", "review")
 
+
 def check_review(state: dict) -> str:
     if "NEEDS_REVISION" in state.get("review", ""):
         return "write"  # Loop back
     return END
+
 
 graph.add_conditional_edge("review", check_review)
 graph.set_entry("research")
@@ -108,10 +112,10 @@ result = await graph.run("Climate change solutions")
 ```python
 result = await graph.run("My prompt")
 
-print(result["input"])     # Original prompt
-print(result["output"])    # Final output
+print(result["input"])  # Original prompt
+print(result["output"])  # Final output
 print(result["research"])  # Output from research node
-print(result["write"])     # Output from write node
+print(result["write"])  # Output from write node
 ```
 
 ## Sync version

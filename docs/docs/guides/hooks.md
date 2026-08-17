@@ -19,11 +19,14 @@ Monitor agent behaviour with callbacks.
 ```python
 from pure_agents import Agent
 
+
 def log_call(name: str, args: dict):
     print(f"Calling {name} with {args}")
 
+
 def log_result(name: str, result: str):
     print(f"{name} returned: {result[:50]}...")
+
 
 agent = Agent(
     on_tool_call=log_call,
@@ -36,9 +39,11 @@ agent = Agent(
 ```python
 from datetime import datetime
 
+
 def timestamped_log(name: str, args: dict):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] CALL: {name}({args})")
+
 
 agent = Agent(
     on_tool_call=timestamped_log,
@@ -51,12 +56,15 @@ agent = Agent(
 ```python
 metrics = {"calls": 0, "errors": 0}
 
+
 def track_call(name: str, args: dict):
     metrics["calls"] += 1
+
 
 def track_result(name: str, result: str):
     if result.startswith("Error"):
         metrics["errors"] += 1
+
 
 agent = Agent(
     on_tool_call=track_call,

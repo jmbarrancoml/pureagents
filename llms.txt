@@ -1,6 +1,6 @@
 # pureagents
 
-A minimal Python library for building LLM agents. ~1,500 lines total.
+A minimal Python library for building LLM agents. ~2,200 lines total.
 
 ## Installation
 
@@ -37,10 +37,9 @@ agent = Agent()
 # With configuration
 agent = Agent(
     provider="openai",           # "mistral" (default), "openai", "anthropic"
-    model="gpt-4o",              # Model name
+    model="gpt-5.6-luna",              # Model name
     system="You are helpful.",   # System prompt
     tools=[my_tool],             # List of tools
-    temperature=0.7,             # Sampling temperature
     max_tokens=1000,             # Max response tokens
     retries=3,                   # Retry on failure
     timeout=30.0,                # Timeout in seconds
@@ -148,9 +147,11 @@ async for event in agent.stream("Write a story"):
     if event.type == "text":
         print(event.content, end="", flush=True)
     elif event.type == "tool_call":
-        print(f"\nCalling {event.name}({event.args})")
+        print(f"\nCalling {event.name}({event.arguments})")
     elif event.type == "tool_result":
-        print(f"\nResult: {event.result}")
+        print(f"\nResult: {event.content}")
+    elif event.type == "done":
+        print(f"\nFinal answer: {event.content}")
 ```
 
 ### Hooks
@@ -176,11 +177,11 @@ agent = Agent(
 Vision model support.
 
 ```python
-agent = Agent(provider="openai", model="gpt-4o")
+agent = Agent(provider="openai", model="gpt-5.6-luna")
 
 result = await agent.run(
     "What's in this image?",
-    images=["photo.jpg", "https://example.com/image.png"]
+    images=["photo.jpg", "diagram.png"]  # local paths
 )
 ```
 
@@ -256,10 +257,10 @@ result = await graph.run("Write about AI")
 agent = Agent(provider="mistral", model="mistral-large-latest")
 
 # OpenAI
-agent = Agent(provider="openai", model="gpt-4o")
+agent = Agent(provider="openai", model="gpt-5.6-luna")
 
 # Anthropic
-agent = Agent(provider="anthropic", model="claude-sonnet-4-20250514")
+agent = Agent(provider="anthropic", model="claude-sonnet-5")
 ```
 
 Environment variables: `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
@@ -270,10 +271,10 @@ Environment variables: `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
 agent = Agent()
 await agent.run("Hello")
 
-print(agent.usage.prompt_tokens)
-print(agent.usage.completion_tokens)
+print(agent.usage.input_tokens)
+print(agent.usage.output_tokens)
 print(agent.usage.total_tokens)
-print(agent.usage.cost)  # Estimated cost in USD
+print(agent.usage.cost())  # Estimated USD, or None if the model has no rate on file
 ```
 
 ## Sync API

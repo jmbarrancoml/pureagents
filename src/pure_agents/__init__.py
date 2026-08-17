@@ -18,14 +18,19 @@ from pure_agents.agent import (
     TEMPLATES,
     Agent,
     Graph,
+    MaxStepsError,
     Router,
+    StreamEvent,
+    StructuredOutputError,
     Usage,
     chain,
     chain_sync,
     clear_cache,
     completion,
     completion_sync,
+    set_cache_size,
 )
+from pure_agents.clients import TruncatedResponseError
 from pure_agents.memory import JSONMemory, Memory
 from pure_agents.message import Message
 from pure_agents.tool import Tool, tool
@@ -36,16 +41,21 @@ __all__ = [
     "END",
     "Graph",
     "JSONMemory",
+    "MaxStepsError",
     "Memory",
     "Message",
     "Router",
+    "StreamEvent",
+    "StructuredOutputError",
     "TEMPLATES",
     "Tool",
+    "TruncatedResponseError",
     "Usage",
     "chain",
     "chain_sync",
     "clear_cache",
     "completion",
     "completion_sync",
+    "set_cache_size",
     "tool",
 ]

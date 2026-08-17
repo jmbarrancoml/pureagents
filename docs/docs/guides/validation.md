@@ -11,6 +11,7 @@ Validate agent responses and retry on failure.
 ```python
 import json
 
+
 def is_valid_json(response: str) -> bool:
     """Check if response is valid JSON."""
     try:
@@ -18,6 +19,7 @@ def is_valid_json(response: str) -> bool:
         return True
     except:
         return False
+
 
 agent = Agent(
     validator=is_valid_json,
@@ -62,6 +64,7 @@ def has_required_fields(response: str) -> bool:
     except:
         return False
 
+
 agent = Agent(validator=has_required_fields, validation_retries=2)
 ```
 
@@ -70,6 +73,7 @@ agent = Agent(validator=has_required_fields, validation_retries=2)
 ```python
 def min_length(response: str) -> bool:
     return len(response) >= 100
+
 
 agent = Agent(validator=min_length, validation_retries=2)
 ```
@@ -80,6 +84,7 @@ agent = Agent(validator=min_length, validation_retries=2)
 def contains_summary(response: str) -> bool:
     return "summary:" in response.lower()
 
+
 agent = Agent(validator=contains_summary, validation_retries=2)
 ```
 
@@ -88,9 +93,11 @@ agent = Agent(validator=contains_summary, validation_retries=2)
 ```python
 import re
 
+
 def is_email_format(response: str) -> bool:
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
     return bool(re.match(pattern, response.strip()))
+
 
 agent = Agent(validator=is_email_format, validation_retries=2)
 ```
@@ -102,10 +109,12 @@ For strict type validation, use [structured outputs](/docs/guides/structured-out
 ```python
 from dataclasses import dataclass
 
+
 @dataclass
 class User:
     name: str
     age: int
+
 
 # This guarantees the correct structure
 result = await agent.run("Create a user", output=User)

@@ -12,15 +12,15 @@ from pure_agents import END, Agent, Graph
 async def main():
     # Create specialised agents
     researcher = Agent(
-        system_prompt="You are a researcher. Find key facts about the topic.",
+        system="You are a researcher. Find key facts about the topic.",
     )
 
     writer = Agent(
-        system_prompt="You are a writer. Write a clear summary based on the research.",
+        system="You are a writer. Write a clear summary based on the research.",
     )
 
     reviewer = Agent(
-        system_prompt=(
+        system=(
             "You are a reviewer. Check the content for quality. "
             "If it needs improvement, say 'NEEDS_REVISION: ' followed by feedback. "
             "If it's good, say 'APPROVED: ' followed by the final content."
@@ -59,7 +59,7 @@ async def main():
     result = await graph.run("The impact of AI on software development")
 
     print(f"Final output:\n{result['output']}")
-    print(f"\nNodes visited: research -> write -> review")
+    print("\nNodes visited: research -> write -> review")
     if result.get("revision_count"):
         print(f"Revisions: {result['revision_count']}")
 

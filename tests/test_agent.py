@@ -83,17 +83,17 @@ class TestAgent:
         agent = Agent(tools=[my_tool], api_key="test-key")
         assert "my_tool" in agent.tools
 
-    def test_custom_system_prompt(self):
+    def test_custom_system(self):
         agent = Agent(
             api_key="test-key",
-            system_prompt="You are a pirate.",
+            system="You are a pirate.",
         )
-        assert agent.system_prompt == "You are a pirate."
+        assert agent.system == "You are a pirate."
 
     def test_openai_provider(self):
         agent = Agent(api_key="test-key", provider="openai")
         assert agent.provider == "openai"
-        assert agent.model == "gpt-5.2-instant"
+        assert agent.model == "gpt-5.6-luna"
         assert agent.client.base_url == "https://api.openai.com/v1"
 
     def test_invalid_provider(self):
@@ -103,7 +103,7 @@ class TestAgent:
     def test_anthropic_provider(self):
         agent = Agent(api_key="test-key", provider="anthropic")
         assert agent.provider == "anthropic"
-        assert agent.model == "claude-sonnet-4-5-20250929"
+        assert agent.model == "claude-sonnet-5"
         assert agent.client.base_url == "https://api.anthropic.com/v1"
 
 

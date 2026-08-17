@@ -16,23 +16,43 @@ agent = Agent()
 await agent.run("Hello, how are you?")
 await agent.run("Tell me more")
 
-print(agent.usage.input_tokens)   # Prompt tokens
+print(agent.usage.input_tokens)  # Prompt tokens
 print(agent.usage.output_tokens)  # Response tokens
-print(agent.usage.total_tokens)   # Combined
-print(agent.usage.requests)       # Number of API calls
+print(agent.usage.total_tokens)  # Combined
+print(agent.usage.requests)  # Number of API calls
 ```
 
 ## Cost estimation
 
-Get estimated cost in USD:
+`cost()` prices the usage against the agent's own model:
 
 ```python
-print(agent.usage.cost("mistral"))    # $0.0001
-print(agent.usage.cost("openai"))     # $0.0025
-print(agent.usage.cost("anthropic"))  # $0.0030
+agent = Agent(provider="anthropic")
+await agent.run("Hello")
+
+print(agent.usage.cost())  # 0.00042
 ```
 
-Costs are approximations based on public pricing.
+Only models with a published rate on file return a number. Anything else
+returns `None`, so an estimate is never quietly wrong:
+
+```python
+print(Usage(model="some-other-model").cost())  # None
+```
+
+Set your own rates in USD per million tokens when the model is not in the
+table, or when you are on negotiated pricing:
+
+```python
+agent.usage.set_rates(2.00, 6.00)
+print(agent.usage.cost())  # priced with your rates
+```
+
+You can also price against a specific model without changing the agent:
+
+```python
+print(agent.usage.cost("claude-haiku-4-5"))
+```
 
 ## Reset counters
 
@@ -61,7 +81,8 @@ for task in tasks:
     await agent.run(task)
 
     # Check budget
-    if agent.usage.cost("openai") > 1.0:
+    spent = agent.usage.cost()
+    if spent is not None and spent > 1.0:
         print("Budget exceeded!")
         break
 ```

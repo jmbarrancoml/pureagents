@@ -23,8 +23,10 @@ def contains_keywords(response: str) -> bool:
 
 def min_length(min_chars: int):
     """Create a validator for minimum length."""
+
     def validator(response: str) -> bool:
         return len(response) >= min_chars
+
     return validator
 
 

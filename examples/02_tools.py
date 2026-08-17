@@ -37,9 +37,7 @@ async def main():
     )
 
     # The agent will use tools as needed
-    response = await agent.run(
-        "What's the weather in Madrid and what's 15% of 340?"
-    )
+    response = await agent.run("What's the weather in Madrid and what's 15% of 340?")
     print(f"\nFinal: {response}")
 
 

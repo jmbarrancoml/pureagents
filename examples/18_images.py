@@ -1,7 +1,5 @@
 """Image support - send images to vision models."""
 
-import asyncio
-
 from pure_agents import Agent
 
 
@@ -9,7 +7,7 @@ async def main():
     # Use a vision-capable model
     agent = Agent(
         provider="openai",
-        model="gpt-4o",  # Vision-capable model
+        model="gpt-5.6-luna",  # Vision-capable model
     )
 
     # Describe an image
@@ -29,7 +27,7 @@ async def main():
     # With Anthropic
     agent_claude = Agent(
         provider="anthropic",
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
     )
 
     result = await agent_claude.run(

@@ -21,10 +21,12 @@ export MISTRAL_API_KEY=your-key
 ```python
 from pure_agents import Agent, tool
 
+
 @tool
 def greet(name: str) -> str:
     """Greet someone by name."""
     return f"Hello, {name}!"
+
 
 agent = Agent(tools=[greet])
 result = await agent.run("Say hello to Maria")
@@ -35,8 +37,9 @@ result = await agent.run("Say hello to Maria")
 ### Streaming
 
 ```python
-async for chunk in agent.stream("Tell me a story"):
-    print(chunk, end="", flush=True)
+async for event in agent.stream("Tell me a story"):
+    if event.type == "text":
+        print(event.content, end="", flush=True)
 ```
 
 ### Structured outputs
@@ -44,10 +47,12 @@ async for chunk in agent.stream("Tell me a story"):
 ```python
 from dataclasses import dataclass
 
+
 @dataclass
 class Analysis:
     sentiment: str
     confidence: float
+
 
 result = await agent.run("Analyse: I love this!", output=Analysis)
 ```
@@ -92,6 +97,7 @@ def search(query: str) -> str:
     """Search with timeout."""
     return "..."
 
+
 agent = Agent(
     tools=[search],
     tool_choice="required",
@@ -123,6 +129,7 @@ def is_json(response: str) -> bool:
         return True
     except:
         return False
+
 
 agent = Agent(validator=is_json, validation_retries=2)
 ```

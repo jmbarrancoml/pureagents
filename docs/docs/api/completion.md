@@ -32,25 +32,23 @@ print(result)  # "The capital of France is Paris."
 ```python
 from pure_agents import completion, tool
 
+
 @tool
 def get_time() -> str:
     """Get the current time."""
     from datetime import datetime
+
     return datetime.now().strftime("%H:%M")
 
-result = await completion(
-    "What time is it?",
-    tools=[get_time]
-)
+
+result = await completion("What time is it?", tools=[get_time])
 ```
 
 ### With different provider
 
 ```python
 result = await completion(
-    "Explain quantum computing",
-    provider="anthropic",
-    model="claude-opus-4-5-20251101"
+    "Explain quantum computing", provider="anthropic", model="claude-opus-4-5-20251101"
 )
 ```
 

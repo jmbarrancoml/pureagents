@@ -17,12 +17,14 @@ coder = Agent(template="coder")
 writer = Agent(template="creative")
 default = Agent()
 
+
 def route(prompt: str) -> str:
     if "code" in prompt.lower():
         return "coder"
     if "write" in prompt.lower() or "story" in prompt.lower():
         return "writer"
     return "default"
+
 
 router = Router(
     agents={"coder": coder, "writer": writer, "default": default},
@@ -59,7 +61,7 @@ Configure the routing LLM:
 router = Router(
     agents={"a": agent_a, "b": agent_b},
     provider="openai",
-    model="gpt-4o-mini",
+    model="gpt-5.6-luna",
 )
 ```
 
@@ -108,6 +110,7 @@ def route_by_complexity(prompt: str) -> str:
     if len(prompt) > 500 or "explain" in prompt.lower():
         return "detailed"
     return "quick"
+
 
 router = Router(
     agents={"detailed": thorough_agent, "quick": fast_agent},

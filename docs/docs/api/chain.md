@@ -43,10 +43,7 @@ from pure_agents import Agent, chain
 researcher = Agent(template="researcher")
 writer = Agent(template="creative")
 
-result = await chain(
-    [researcher, writer],
-    "The history of Python"
-)
+result = await chain([researcher, writer], "The history of Python")
 ```
 
 ## Sync example

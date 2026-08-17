@@ -13,15 +13,27 @@ from pure_agents import Agent
 
 agent = Agent()
 
-async for chunk in agent.stream("Explain quantum computing"):
-    print(chunk, end="", flush=True)
+async for event in agent.stream("Explain quantum computing"):
+    if event.type == "text":
+        print(event.content, end="", flush=True)
 ```
 
 Output appears as it's generated, not all at once.
 
+## Events
+
+`stream()` yields `StreamEvent` objects. Each has a `type`:
+
+| `type` | When | Fields you'll use |
+|--------|------|-------------------|
+| `text` | A chunk of the answer arrived | `content` |
+| `tool_call` | The model asked for a tool | `name`, `arguments`, `id` |
+| `tool_result` | That tool finished | `name`, `content`, `id` |
+| `done` | The run finished | `content` (the full answer) |
+
 ## With tools
 
-Streaming works with tools too. The agent handles tool calls automatically:
+Tool calls are visible as they happen:
 
 ```python
 @tool
@@ -29,47 +41,56 @@ def get_weather(city: str) -> str:
     """Get the weather for a city."""
     return f"Sunny, 22°C in {city}"
 
+
 agent = Agent(tools=[get_weather])
 
-async for chunk in agent.stream("What's the weather in Madrid?"):
-    print(chunk, end="", flush=True)
-```
-
-The agent will:
-1. Call `get_weather("Madrid")`
-2. Stream the final response
-
-## Debug mode with streaming
-
-Enable debug to see tool calls:
-
-```python
-agent = Agent(tools=[get_weather], debug=True)
-
-async for chunk in agent.stream("What's the weather in Madrid?"):
-    print(chunk, end="", flush=True)
+async for event in agent.stream("What's the weather in Madrid?"):
+    if event.type == "text":
+        print(event.content, end="", flush=True)
+    elif event.type == "tool_call":
+        print(f"\n[{event.name}({event.arguments})]")
+    elif event.type == "tool_result":
+        print(f"[-> {event.content}]")
 ```
 
 Output:
+
 ```
-[Step 1/10]
-[Call] get_weather({'city': 'Madrid'})
-[Result] Sunny, 22°C in Madrid
-[Step 2/10]
+[get_weather({'city': 'Madrid'})]
+[-> Sunny, 22°C in Madrid]
 The weather in Madrid is sunny with a temperature of 22°C.
-[Final]
 ```
 
 ## Collecting the full response
 
-If you need the complete response:
+The `done` event carries the complete answer:
 
 ```python
-chunks = []
-async for chunk in agent.stream("Hello"):
-    chunks.append(chunk)
+async for event in agent.stream("Hello"):
+    if event.type == "done":
+        full_response = event.content
+```
 
-full_response = "".join(chunks)
+## Images
+
+```python
+async for event in agent.stream("What's in this photo?", images=["photo.jpg"]):
+    ...
+```
+
+## Reliability
+
+Streaming shares `run()`'s reliability features: retries, timeout, provider
+fallback, and token accounting. Retries only apply before the first chunk
+reaches you, since a stream already in flight cannot be restarted cleanly.
+
+```python
+agent = Agent(retries=3, timeout=120.0, fallback="anthropic")
+
+async for event in agent.stream("Write a long essay"):
+    ...
+
+print(agent.usage.total_tokens)
 ```
 
 ## Provider support
