@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
@@ -12,28 +12,109 @@ import httpx
 from pure_agents.message import Message
 from pure_agents.tool import Tool
 
-# Defaults are the cheapest current-generation tier each provider offers that
-# still drives a tool loop reliably. Override with Agent(model=...).
-PROVIDERS = {
-    "mistral": {
-        "base_url": "https://api.mistral.ai/v1",
-        "env_var": "MISTRAL_API_KEY",
-        "default_model": "mistral-large-latest",
-        "client": "openai",
-    },
-    "openai": {
-        "base_url": "https://api.openai.com/v1",
-        "env_var": "OPENAI_API_KEY",
-        "default_model": "gpt-5.6-luna",
-        "client": "openai",
-    },
-    "anthropic": {
-        "base_url": "https://api.anthropic.com/v1",
-        "env_var": "ANTHROPIC_API_KEY",
-        "default_model": "claude-sonnet-5",
-        "client": "anthropic",
-    },
+DIALECTS = ("openai", "anthropic")
+
+# Sent when a provider declares no environment variable, which is the shape of
+# a local server. Ollama, LM Studio and vLLM accept any bearer token.
+PLACEHOLDER_KEY = "not-needed"
+
+
+@dataclass(frozen=True)
+class Provider:
+    """Where to send requests, and in which wire format."""
+
+    base_url: str
+    env_var: str | None = None
+    default_model: str | None = None
+    dialect: str = "openai"
+    headers: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def needs_key(self) -> bool:
+        return self.env_var is not None
+
+    def with_headers(self, extra: dict[str, str] | None) -> Provider:
+        if not extra:
+            return self
+        return replace(self, headers={**self.headers, **extra})
+
+
+# Built-in providers. Their default models are the cheapest current-generation
+# tier each one offers that still drives a tool loop reliably; override with
+# Agent(model=...). Third-party endpoints are deliberately absent: their model
+# names move faster than this file can track, so register them yourself.
+PROVIDERS: dict[str, Provider] = {
+    "mistral": Provider(
+        base_url="https://api.mistral.ai/v1",
+        env_var="MISTRAL_API_KEY",
+        default_model="mistral-large-latest",
+    ),
+    "openai": Provider(
+        base_url="https://api.openai.com/v1",
+        env_var="OPENAI_API_KEY",
+        default_model="gpt-5.6-luna",
+    ),
+    "anthropic": Provider(
+        base_url="https://api.anthropic.com/v1",
+        env_var="ANTHROPIC_API_KEY",
+        default_model="claude-sonnet-5",
+        dialect="anthropic",
+    ),
 }
+
+
+def register_provider(
+    name: str,
+    *,
+    base_url: str,
+    env_var: str | None = None,
+    default_model: str | None = None,
+    dialect: str = "openai",
+    headers: dict[str, str] | None = None,
+    overwrite: bool = False,
+) -> Provider:
+    """Teach Agent about another endpoint, then use it by name.
+
+        register_provider("ollama", base_url="http://localhost:11434/v1")
+        agent = Agent(provider="ollama", model="llama3.3")
+
+    Leave env_var unset for a local server that does not check the key. Set
+    default_model only if you are willing to keep it current; otherwise callers
+    pass model= and get a clear error when they forget.
+    """
+    if not name or not name.strip():
+        raise ValueError("Provider name cannot be empty.")
+    if name in PROVIDERS and not overwrite:
+        raise ValueError(
+            f"Provider {name!r} is already registered. "
+            "Pass overwrite=True to replace it."
+        )
+    if not base_url.startswith(("http://", "https://")):
+        raise ValueError(
+            f"base_url must start with http:// or https://, got {base_url!r}"
+        )
+    if dialect not in DIALECTS:
+        raise ValueError(f"Unknown dialect {dialect!r}. Use one of {list(DIALECTS)}.")
+
+    provider = Provider(
+        base_url=base_url.rstrip("/"),
+        env_var=env_var,
+        default_model=default_model,
+        dialect=dialect,
+        headers=dict(headers or {}),
+    )
+    PROVIDERS[name] = provider
+    return provider
+
+
+BUILTIN_PROVIDERS = frozenset(PROVIDERS)
+
+
+def unregister_provider(name: str) -> None:
+    """Remove a registered provider. Built-ins cannot be removed."""
+    if name in BUILTIN_PROVIDERS:
+        raise ValueError(f"Cannot unregister the built-in provider {name!r}.")
+    PROVIDERS.pop(name, None)
 
 
 def _with_images(
@@ -75,6 +156,8 @@ class LLMClient:
     max_tokens: int | None = None
     last_input_tokens: int = 0
     last_output_tokens: int = 0
+    # Extra headers the endpoint needs, e.g. an OpenRouter attribution header.
+    extra_headers: dict[str, str] = field(default_factory=dict)
     # Injectable for tests; None uses httpx's real network transport.
     transport: httpx.AsyncBaseTransport | None = None
 
@@ -90,6 +173,13 @@ class LLMClient:
                 timeout=self.timeout, transport=self.transport
             )
         return self._client
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            **self.extra_headers,
+        }
 
     async def aclose(self) -> None:
         """Close the pooled connections. Safe to call more than once."""
@@ -124,10 +214,7 @@ class LLMClient:
 
         response = await client.post(
             f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers(),
             json=payload,
         )
         response.raise_for_status()
@@ -175,10 +262,7 @@ class LLMClient:
         async with client.stream(
             "POST",
             f"{self.base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers(),
             json=payload,
         ) as response:
             response.raise_for_status()
@@ -265,6 +349,8 @@ class AnthropicClient:
     max_tokens: int = DEFAULT_MAX_TOKENS
     last_input_tokens: int = 0
     last_output_tokens: int = 0
+    # Extra headers the endpoint needs, e.g. an OpenRouter attribution header.
+    extra_headers: dict[str, str] = field(default_factory=dict)
     # Injectable for tests; None uses httpx's real network transport.
     transport: httpx.AsyncBaseTransport | None = None
 
@@ -354,6 +440,14 @@ class AnthropicClient:
             )
         return self._client
 
+    def _headers(self) -> dict[str, str]:
+        return {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            **self.extra_headers,
+        }
+
     async def aclose(self) -> None:
         """Close the pooled connections. Safe to call more than once."""
         if self._client is not None and not self._client.is_closed:
@@ -393,11 +487,7 @@ class AnthropicClient:
 
         response = await client.post(
             f"{self.base_url}/messages",
-            headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers(),
             json=payload,
         )
         response.raise_for_status()
@@ -473,11 +563,7 @@ class AnthropicClient:
         async with client.stream(
             "POST",
             f"{self.base_url}/messages",
-            headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers(),
             json=payload,
         ) as response:
             response.raise_for_status()

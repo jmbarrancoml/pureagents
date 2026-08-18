@@ -6,7 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Any OpenAI-compatible endpoint works: `Agent(base_url="http://localhost:11434/v1",
+  model="llama3.3")` covers Ollama, LM Studio, vLLM, OpenRouter, Groq, Together
+  and self-hosted gateways. No key is required when the server does not ask for
+  one.
+- `register_provider()` names an endpoint for reuse, with `env_var`,
+  `default_model`, `dialect` (`"openai"` or `"anthropic"`) and `headers`.
+  `unregister_provider()` removes it; built-ins are protected.
+- `Agent(headers=...)` adds request headers, for gateways that want attribution.
+
 ### Changed (breaking)
+
+- `PROVIDERS` maps names to a frozen `Provider` record rather than a plain dict.
+  Read `PROVIDERS["openai"].base_url` instead of `PROVIDERS["openai"]["base_url"]`.
+- `Agent(provider=)` defaults to `None` and resolves to `"mistral"`, so that
+  passing `base_url=` and `provider=` together can be rejected.
 
 - `Agent(system_prompt=...)` is now `Agent(system=...)`, and the attribute is
   `agent.system`.

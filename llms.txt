@@ -265,6 +265,31 @@ agent = Agent(provider="anthropic", model="claude-sonnet-5")
 
 Environment variables: `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
 
+### Any OpenAI-compatible endpoint
+
+```python
+# Ad-hoc: Ollama, LM Studio, vLLM, OpenRouter, Groq, Together, your own gateway
+agent = Agent(base_url="http://localhost:11434/v1", model="llama3.3")
+
+# Named, for reuse
+from pure_agents import register_provider
+
+register_provider(
+    "ollama",
+    base_url="http://localhost:11434/v1",  # required
+    env_var=None,          # omit for a keyless local server
+    default_model=None,    # omit and callers must pass model=
+    dialect="openai",      # or "anthropic"
+    headers=None,          # extra headers every request needs
+)
+agent = Agent(provider="ollama", model="llama3.3")
+```
+
+Common base URLs: Ollama `http://localhost:11434/v1`, LM Studio
+`http://localhost:1234/v1`, vLLM `http://localhost:8000/v1`, OpenRouter
+`https://openrouter.ai/api/v1`, Groq `https://api.groq.com/openai/v1`,
+Together `https://api.together.xyz/v1`.
+
 ## Usage tracking
 
 ```python

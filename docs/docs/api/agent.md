@@ -19,7 +19,9 @@ Agent(
     system: str | None = None,
     template: str | None = None,
     debug: bool = False,
-    provider: str = "mistral",
+    provider: str | None = None,
+    base_url: str | None = None,
+    headers: dict[str, str] | None = None,
     session: str | None = None,
     memory: Memory | None = None,
     # Hooks
@@ -58,7 +60,9 @@ Agent(
 | `system` | `str` | Auto | Custom system prompt |
 | `template` | `str` | `None` | Predefined template |
 | `debug` | `bool` | `False` | Print debug info |
-| `provider` | `str` | `"mistral"` | LLM provider |
+| `provider` | `str` | `"mistral"` | Registered provider name |
+| `base_url` | `str` | `None` | Any OpenAI-compatible endpoint. Cannot be combined with `provider` |
+| `headers` | `dict` | `None` | Extra headers on every request |
 | `session` | `str` | `None` | Session ID for persistence |
 | `memory` | `Memory` | `JSONMemory` | Custom memory backend |
 

@@ -16,7 +16,13 @@ from typing import Any, TypeVar
 
 import httpx
 
-from pure_agents.clients import PROVIDERS, AnthropicClient, LLMClient
+from pure_agents.clients import (
+    PLACEHOLDER_KEY,
+    PROVIDERS,
+    AnthropicClient,
+    LLMClient,
+    Provider,
+)
 from pure_agents.memory import JSONMemory, Memory, write_json_atomically
 from pure_agents.message import Message
 from pure_agents.schema import dataclass_schema
@@ -313,6 +319,45 @@ def _cache_key(
     return hashlib.sha256(serialised.encode()).hexdigest()
 
 
+DEFAULT_PROVIDER = "mistral"
+CUSTOM_PROVIDER = "custom"
+
+
+def _resolve_provider(
+    provider: str | None,
+    base_url: str | None,
+) -> tuple[str, Provider]:
+    """Work out which endpoint to talk to, and in which wire format."""
+    if base_url:
+        if provider is not None:
+            raise ValueError(
+                "Pass either provider= or base_url=, not both. To reuse a custom "
+                "endpoint by name, call register_provider() once instead."
+            )
+        if not base_url.startswith(("http://", "https://")):
+            raise ValueError(
+                f"base_url must start with http:// or https://, got {base_url!r}"
+            )
+        # An ad-hoc endpoint always speaks the OpenAI dialect: that is what
+        # "OpenAI-compatible" means. For anything else, register_provider().
+        return CUSTOM_PROVIDER, Provider(base_url=base_url.rstrip("/"))
+
+    name = provider or DEFAULT_PROVIDER
+    if name not in PROVIDERS:
+        raise ValueError(
+            f"Unknown provider: {name}. Registered: {sorted(PROVIDERS)}. "
+            "Add your own with register_provider()."
+        )
+    return name, PROVIDERS[name]
+
+
+def _key_from_env(config: Provider) -> str:
+    """Read the provider's key, or a placeholder for a keyless local server."""
+    if not config.needs_key:
+        return PLACEHOLDER_KEY
+    return os.environ.get(config.env_var or "", "")
+
+
 def _load_image(path: str) -> tuple[str, str]:
     path_obj = Path(path)
     suffix = path_obj.suffix.lower()
@@ -352,7 +397,9 @@ class Agent:
         system: str | None = None,
         template: str | None = None,
         debug: bool = False,
-        provider: str = "mistral",
+        provider: str | None = None,
+        base_url: str | None = None,
+        headers: dict[str, str] | None = None,
         session: str | None = None,
         memory: Memory | None = None,
         # Hooks
@@ -376,17 +423,22 @@ class Agent:
         validator: Callable[[str], bool] | None = None,
         validation_retries: int = 0,
     ):
-        if provider not in PROVIDERS:
-            raise ValueError(f"Unknown provider: {provider}. Use: {list(PROVIDERS)}")
-
-        self.provider = provider
+        self.provider, provider_config = _resolve_provider(provider, base_url)
+        provider_config = provider_config.with_headers(headers)
+        self.base_url = base_url
+        self.headers = dict(headers or {})
         self.fallback = fallback
-        provider_config = PROVIDERS[provider]
 
-        self.model = model or provider_config["default_model"]
+        self.model = model or provider_config.default_model
+        if not self.model:
+            raise ValueError(
+                f"Provider {self.provider!r} has no default model. "
+                "Pass model= to say which one to use."
+            )
+
         self._all_tools = {t.name: t for t in (tools or [])}
         self.enabled_groups = enabled_groups
-        self.api_key = api_key or os.environ.get(provider_config["env_var"], "")
+        self.api_key = api_key or _key_from_env(provider_config)
         self.max_steps = max_steps
         self.max_tokens = max_tokens
         self.debug = debug
@@ -429,11 +481,11 @@ class Agent:
 
         if not self.api_key:
             raise ValueError(
-                f"API key required. Set {provider_config['env_var']} or pass api_key."
+                f"API key required. Set {provider_config.env_var} or pass api_key."
             )
 
         # Create client
-        self.client = self._create_client(provider, self.api_key)
+        self.client = self._build_client(provider_config, self.api_key)
 
         # The fallback is a different provider, so it needs its own key and its
         # own model. Sending self.model to it would name a model it does not have.
@@ -445,16 +497,19 @@ class Agent:
                     f"Unknown fallback provider: {fallback}. Use: {list(PROVIDERS)}"
                 )
             fallback_config = PROVIDERS[fallback]
-            fallback_key = fallback_api_key or os.environ.get(
-                fallback_config["env_var"], ""
-            )
+            fallback_key = fallback_api_key or _key_from_env(fallback_config)
             if not fallback_key:
                 raise ValueError(
                     f"Fallback provider '{fallback}' needs an API key. "
-                    f"Set {fallback_config['env_var']} or pass fallback_api_key."
+                    f"Set {fallback_config.env_var} or pass fallback_api_key."
                 )
-            self.fallback_model = fallback_model or fallback_config["default_model"]
-            self.fallback_client = self._create_client(fallback, fallback_key)
+            self.fallback_model = fallback_model or fallback_config.default_model
+            if not self.fallback_model:
+                raise ValueError(
+                    f"Fallback provider {fallback!r} has no default model. "
+                    "Pass fallback_model= to say which one to use."
+                )
+            self.fallback_client = self._build_client(fallback_config, fallback_key)
 
         # Load existing session
         self.messages: list[Message] = []
@@ -463,25 +518,28 @@ class Agent:
             if loaded:
                 self.messages = loaded
 
-    def _create_client(
-        self, provider: str, api_key: str
+    def _build_client(
+        self, config: Provider, api_key: str
     ) -> LLMClient | AnthropicClient:
-        config = PROVIDERS[provider]
         # Without this the client kept its own 60s ceiling and Agent(timeout=300)
         # still died at 60.
         timeout = self.timeout if self.timeout else DEFAULT_REQUEST_TIMEOUT
-        if config.get("client") == "anthropic":
+        if config.dialect == "anthropic":
             client = AnthropicClient(
-                api_key=api_key, base_url=config["base_url"], timeout=timeout
+                api_key=api_key,
+                base_url=config.base_url,
+                timeout=timeout,
+                extra_headers=dict(config.headers),
             )
             if self.max_tokens:
                 client.max_tokens = self.max_tokens
             return client
         return LLMClient(
             api_key=api_key,
-            base_url=config["base_url"],
+            base_url=config.base_url,
             timeout=timeout,
             max_tokens=self.max_tokens,
+            extra_headers=dict(config.headers),
         )
 
     async def aclose(self) -> None:
@@ -899,7 +957,9 @@ class Agent:
             max_tokens=self.max_tokens,
             system=self.system,
             debug=self.debug,
-            provider=self.provider,
+            provider=None if self.base_url else self.provider,
+            base_url=self.base_url,
+            headers=dict(self.headers) if self.headers else None,
             on_tool_call=self.on_tool_call,
             on_tool_result=self.on_tool_result,
             on_thinking=self.on_thinking,
