@@ -59,7 +59,7 @@ result = await agent.run("Find the weather in Madrid")
 | Any endpoint | `base_url="http://localhost:11434/v1"`, or `register_provider(...)` |
 | Streaming | `agent.stream()` yields `StreamEvent` objects |
 | Memory | `session="my-chat"` |
-| Structured outputs | `output=MyDataclass` |
+| Structured outputs | `output=MyDataclass`, enforced by the provider |
 | Hooks | `on_tool_call=fn`, `on_tool_result=fn`, `on_thinking=fn` |
 | Images | `images=["photo.jpg"]` for vision models |
 | Tool groups | `@tool(group="web")`, `agent.enable_group("web")` |
@@ -178,6 +178,10 @@ class Analysis:
 
 result = await agent.run("Analyse this review: 'Great product!'", output=Analysis)
 ```
+
+The schema goes to the provider as a decoding constraint, not as text in the
+prompt, so the reply cannot come back the wrong shape. `list[T]`, `dict[str, T]`,
+`Optional`, `Literal`, `Enum` and nested dataclasses all map across.
 
 ## Chaining
 

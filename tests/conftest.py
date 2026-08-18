@@ -118,13 +118,14 @@ def openai_response(
     tool_calls: list[dict[str, Any]] | None = None,
     prompt_tokens: int = 10,
     completion_tokens: int = 5,
+    finish_reason: str = "stop",
 ) -> dict[str, Any]:
     """Build an OpenAI-compatible chat completion payload."""
     message: dict[str, Any] = {"role": "assistant", "content": content}
     if tool_calls:
         message["tool_calls"] = tool_calls
     return {
-        "choices": [{"message": message, "finish_reason": "stop"}],
+        "choices": [{"message": message, "finish_reason": finish_reason}],
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,

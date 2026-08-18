@@ -185,6 +185,12 @@ class Review:
     score: int
 
 
+@dataclass
+class Analysis:
+    sentiment: str
+    keywords: list[str]
+
+
 class TestParseStructured:
     def test_plain_json(self):
         assert _parse_structured('{"sentiment": "good", "score": 5}', Review) == Review(
@@ -218,17 +224,16 @@ class TestParseStructured:
 
 
 class TestStructuredOutputEndToEnd:
-    async def test_schema_reaches_the_model(self, make_agent):
-        @dataclass
-        class Analysis:
-            sentiment: str
-            keywords: list[str]
-
+    async def test_the_schema_is_enforced_by_the_provider(self, make_agent):
         agent, fake = make_agent()
         fake.queue(openai_response('{"sentiment": "good", "keywords": ["a", "b"]}'))
 
         result = await agent.run("analyse", output=Analysis)
 
         assert result == Analysis(sentiment="good", keywords=["a", "b"])
-        prompt = fake.last_request()["messages"][-1]["content"]
-        assert '"type": "array"' in prompt
+
+        request = fake.last_request()
+        schema = request["response_format"]["json_schema"]["schema"]
+        assert schema["properties"]["keywords"]["type"] == "array"
+        # The prompt stays about the task; the schema travels in its own field.
+        assert request["messages"][-1]["content"] == "analyse"

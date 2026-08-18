@@ -82,6 +82,75 @@ def dataclass_schema(cls: type) -> dict[str, Any]:
     return {"type": "object", "properties": properties, "required": required}
 
 
+NULL_SCHEMA: dict[str, Any] = {"type": "null"}
+
+
+def closed_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Forbid properties the schema did not name, on every object.
+
+    Every schema-enforcing endpoint wants this, and it costs nothing: the
+    fields stay exactly as optional as they were.
+    """
+    return _tighten(schema, require_all=False)
+
+
+def strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Also meet OpenAI's strict mode, which is stricter than it sounds.
+
+    Strict mode requires every property to appear in `required`, so a field
+    that had a default becomes nullable instead of absent.
+
+    Only send this where `strict: true` is documented. It is an OpenAI
+    extension, not part of the JSON Schema an arbitrary OpenAI-compatible
+    server agreed to accept, and the rewrite it forces is pointless anywhere
+    that does not enforce the all-required rule.
+    """
+    return _tighten(schema, require_all=True)
+
+
+def _tighten(node: Any, *, require_all: bool) -> Any:
+    if not isinstance(node, dict):
+        return node
+
+    tightened = dict(node)
+    properties = tightened.get("properties")
+
+    if isinstance(properties, dict):
+        optional = set(properties) - set(tightened.get("required", []))
+        tightened["properties"] = {
+            name: _nullable(_tighten(sub, require_all=require_all))
+            if (require_all and name in optional)
+            else _tighten(sub, require_all=require_all)
+            for name, sub in properties.items()
+        }
+        if require_all:
+            tightened["required"] = list(tightened["properties"])
+
+    if tightened.get("type") == "object" and "additionalProperties" not in tightened:
+        tightened["additionalProperties"] = False
+
+    if "items" in tightened:
+        tightened["items"] = _tighten(tightened["items"], require_all=require_all)
+    if isinstance(tightened.get("anyOf"), list):
+        tightened["anyOf"] = [
+            _tighten(sub, require_all=require_all) for sub in tightened["anyOf"]
+        ]
+    if isinstance(tightened.get("additionalProperties"), dict):
+        tightened["additionalProperties"] = _tighten(
+            tightened["additionalProperties"], require_all=require_all
+        )
+
+    return tightened
+
+
+def _nullable(node: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(node.get("anyOf"), list):
+        if NULL_SCHEMA in node["anyOf"]:
+            return node
+        return {**node, "anyOf": [*node["anyOf"], dict(NULL_SCHEMA)]}
+    return {"anyOf": [node, dict(NULL_SCHEMA)]}
+
+
 def _literal_schema(values: list[Any]) -> dict[str, Any]:
     schema: dict[str, Any] = {"enum": list(values)}
     value_types = {type(value) for value in values}
