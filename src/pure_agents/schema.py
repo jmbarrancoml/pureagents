@@ -85,18 +85,30 @@ def dataclass_schema(cls: type) -> dict[str, Any]:
 NULL_SCHEMA: dict[str, Any] = {"type": "null"}
 
 
-def strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Tighten a schema so a provider can enforce it while decoding.
+def closed_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Forbid properties the schema did not name, on every object.
 
-    Strict modes ask for two things the ordinary schema does not give them:
-    `additionalProperties: false` on every object, and every property named in
-    `required`. A field that had a default becomes nullable rather than absent,
-    because that is the only way strict mode can express "may be missing".
+    Every schema-enforcing endpoint wants this, and it costs nothing: the
+    fields stay exactly as optional as they were.
     """
-    return _tighten(schema)
+    return _tighten(schema, require_all=False)
 
 
-def _tighten(node: Any) -> Any:
+def strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Also meet OpenAI's strict mode, which is stricter than it sounds.
+
+    Strict mode requires every property to appear in `required`, so a field
+    that had a default becomes nullable instead of absent.
+
+    Only send this where `strict: true` is documented. It is an OpenAI
+    extension, not part of the JSON Schema an arbitrary OpenAI-compatible
+    server agreed to accept, and the rewrite it forces is pointless anywhere
+    that does not enforce the all-required rule.
+    """
+    return _tighten(schema, require_all=True)
+
+
+def _tighten(node: Any, *, require_all: bool) -> Any:
     if not isinstance(node, dict):
         return node
 
@@ -106,20 +118,27 @@ def _tighten(node: Any) -> Any:
     if isinstance(properties, dict):
         optional = set(properties) - set(tightened.get("required", []))
         tightened["properties"] = {
-            name: _nullable(_tighten(sub)) if name in optional else _tighten(sub)
+            name: _nullable(_tighten(sub, require_all=require_all))
+            if (require_all and name in optional)
+            else _tighten(sub, require_all=require_all)
             for name, sub in properties.items()
         }
-        tightened["required"] = list(tightened["properties"])
+        if require_all:
+            tightened["required"] = list(tightened["properties"])
 
     if tightened.get("type") == "object" and "additionalProperties" not in tightened:
         tightened["additionalProperties"] = False
 
     if "items" in tightened:
-        tightened["items"] = _tighten(tightened["items"])
+        tightened["items"] = _tighten(tightened["items"], require_all=require_all)
     if isinstance(tightened.get("anyOf"), list):
-        tightened["anyOf"] = [_tighten(sub) for sub in tightened["anyOf"]]
+        tightened["anyOf"] = [
+            _tighten(sub, require_all=require_all) for sub in tightened["anyOf"]
+        ]
     if isinstance(tightened.get("additionalProperties"), dict):
-        tightened["additionalProperties"] = _tighten(tightened["additionalProperties"])
+        tightened["additionalProperties"] = _tighten(
+            tightened["additionalProperties"], require_all=require_all
+        )
 
     return tightened
 

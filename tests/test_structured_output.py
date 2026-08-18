@@ -8,7 +8,13 @@ from typing import Literal
 
 import pytest
 
-from pure_agents import Agent, StructuredOutputError, register_provider, tool
+from pure_agents import (
+    Agent,
+    StructuredOutputError,
+    TruncatedResponseError,
+    register_provider,
+    tool,
+)
 from pure_agents.schema import dataclass_schema, strict_schema
 from tests.conftest import (
     FakeLLM,
@@ -237,3 +243,101 @@ class TestErrors:
 
         with pytest.raises(StructuredOutputError, match="does not match Review"):
             await agent.run("review", output=Review)
+
+
+class TestStrictModeIsOptional:
+    """OpenAI's strict mode is an extension, not something every server wants.
+
+    Grammar-constrained backends accept the schema and then generate badly from
+    the unions strict mode forces, so it only travels where it is asked for.
+    """
+
+    def test_built_in_openai_providers_ask_for_strict(self):
+        assert Agent(api_key="k", provider="openai").strict_output is True
+        assert Agent(api_key="k", provider="mistral").strict_output is True
+
+    def test_anthropic_does_not(self):
+        assert Agent(api_key="k", provider="anthropic").strict_output is False
+
+    def test_an_ad_hoc_endpoint_does_not(self):
+        assert (
+            Agent(base_url="http://localhost:11434/v1", model="m").strict_output
+            is False
+        )
+
+    async def test_a_non_strict_endpoint_gets_no_strict_flag(self):
+        agent = Agent(base_url="http://localhost:11434/v1", model="m")
+        fake = FakeLLM()
+        agent.client.transport = fake.transport()
+        fake.queue(openai_response('{"name": "x"}'))
+
+        await agent.run("go", output=Config)
+
+        assert "strict" not in fake.last_request()["response_format"]["json_schema"]
+
+    async def test_a_non_strict_endpoint_keeps_optional_fields_optional(self):
+        agent = Agent(base_url="http://localhost:11434/v1", model="m")
+        fake = FakeLLM()
+        agent.client.transport = fake.transport()
+        fake.queue(openai_response('{"name": "x"}'))
+
+        await agent.run("go", output=Config)
+
+        schema = fake.last_request()["response_format"]["json_schema"]["schema"]
+        assert schema["required"] == ["name"]
+        assert schema["properties"]["retries"] == {"type": "integer"}
+        assert schema["additionalProperties"] is False
+
+    async def test_a_registered_provider_can_opt_in(self):
+        register_provider(
+            "groq", base_url="https://api.groq.test/openai/v1", strict_schemas=True
+        )
+        agent = Agent(provider="groq", model="m")
+        fake = FakeLLM()
+        agent.client.transport = fake.transport()
+        fake.queue(openai_response('{"name": "x", "retries": null, "tags": []}'))
+
+        await agent.run("go", output=Config)
+
+        json_schema = fake.last_request()["response_format"]["json_schema"]
+        assert json_schema["strict"] is True
+        assert set(json_schema["schema"]["required"]) == {"name", "retries", "tags"}
+
+
+class TestTruncationIsReported:
+    """A reply cut off at the token limit is not a reply."""
+
+    async def test_a_truncated_structured_reply_names_the_cause(self, make_agent):
+        agent, fake = make_agent()
+        fake.queue(openai_response('{"sentiment": "goo', finish_reason="length"))
+
+        with pytest.raises(TruncatedResponseError, match="token limit"):
+            await agent.run("review", output=Review)
+
+    async def test_a_truncated_tool_call_names_the_cause(self, make_agent):
+        agent, fake = make_agent(tools=[lookup])
+        fake.queue(
+            openai_response(
+                None,
+                [openai_tool_call("lookup", {"term": "x"})],
+                finish_reason="length",
+            )
+        )
+
+        with pytest.raises(TruncatedResponseError, match="token limit"):
+            await agent.run("go")
+
+    async def test_truncated_plain_text_is_flagged_not_raised(self, make_agent):
+        agent, fake = make_agent(max_tokens=50)
+        fake.queue(openai_response("half an ans", finish_reason="length"))
+
+        result = await agent.run("go")
+
+        assert result.startswith("half an ans")
+        assert "truncated" in result
+
+    async def test_a_complete_reply_is_untouched(self, make_agent):
+        agent, fake = make_agent()
+        fake.queue(openai_response("all done"))
+
+        assert await agent.run("go") == "all done"

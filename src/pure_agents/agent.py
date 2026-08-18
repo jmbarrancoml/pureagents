@@ -25,7 +25,7 @@ from pure_agents.clients import (
 )
 from pure_agents.memory import JSONMemory, Memory, write_json_atomically
 from pure_agents.message import Message
-from pure_agents.schema import dataclass_schema, strict_schema
+from pure_agents.schema import closed_schema, dataclass_schema, strict_schema
 from pure_agents.tool import Tool
 
 T = TypeVar("T")
@@ -430,6 +430,7 @@ class Agent:
         self.base_url = base_url
         self.headers = dict(headers or {})
         self.native_output = provider_config.structured_outputs
+        self.strict_output = provider_config.strict_schemas
         self.fallback = fallback
 
         self.model = model or provider_config.default_model
@@ -543,6 +544,7 @@ class Agent:
             timeout=timeout,
             max_tokens=self.max_tokens,
             extra_headers=dict(config.headers),
+            strict_schemas=config.strict_schemas,
         )
 
     async def aclose(self) -> None:
@@ -840,7 +842,8 @@ class Agent:
             if self.native_output:
                 # The provider enforces this while decoding, so the prompt stays
                 # about the task rather than carrying a copy of the schema.
-                output_schema = strict_schema({"title": output.__name__, **schema})
+                tighten = strict_schema if self.strict_output else closed_schema
+                output_schema = tighten({"title": output.__name__, **schema})
             else:
                 user_prompt = (
                     f"{prompt}\n\n"

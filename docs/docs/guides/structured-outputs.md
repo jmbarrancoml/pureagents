@@ -68,9 +68,20 @@ back the wrong shape:
    properties, and every property is listed as required. A field with a default
    becomes nullable, because that is how strict mode expresses "may be missing".
 3. The schema travels in the request's own field, not in the prompt.
-   OpenAI-compatible endpoints receive `response_format.json_schema` with
-   `strict: true`; Anthropic receives `output_config.format`.
+   OpenAI-compatible endpoints receive `response_format.json_schema`; Anthropic
+   receives `output_config.format`.
 4. The reply is parsed into your dataclass.
+
+Step 2 only applies where `strict: true` is sent. It is an OpenAI extension,
+not part of the wire format every OpenAI-compatible server signed up for, so it
+goes to the built-in `openai` and `mistral` providers and nowhere else by
+default. Everywhere else the schema is still closed to unknown properties, and
+optional fields stay genuinely optional:
+
+```python
+# A gateway that implements OpenAI strict mode
+register_provider("groq", base_url="...", strict_schemas=True)
+```
 
 Your prompt stays about the task. Run with `debug=True` to see the request.
 
@@ -119,8 +130,19 @@ except StructuredOutputError as e:
 ```
 
 With provider-side enforcement this should not happen for schema reasons. It
-still can when the response was cut short at `max_tokens`, or on an endpoint
-using the prompt fallback.
+still can on an endpoint using the prompt fallback.
+
+A reply cut off at the token limit raises `TruncatedResponseError` instead, so
+the message names the real cause rather than complaining about the JSON:
+
+```python
+from pure_agents import TruncatedResponseError
+
+try:
+    result = await agent.run("...", output=Recipe)
+except TruncatedResponseError:
+    agent.max_tokens = 4000  # and retry
+```
 
 ## When to use
 

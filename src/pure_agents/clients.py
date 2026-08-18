@@ -12,6 +12,11 @@ import httpx
 from pure_agents.message import Message
 from pure_agents.tool import Tool
 
+
+class TruncatedResponseError(RuntimeError):
+    """The provider stopped mid-response, leaving unusable output."""
+
+
 DIALECTS = ("openai", "anthropic")
 
 # Sent when a provider declares no environment variable, which is the shape of
@@ -32,6 +37,11 @@ class Provider:
     # False for a server that rejects response_format, and Agent falls back
     # to asking for the schema in the prompt.
     structured_outputs: bool = True
+    # Whether the endpoint implements OpenAI's strict mode. It is an OpenAI
+    # extension rather than part of the wire format everyone else agreed to,
+    # and it forces optional fields into nullable unions, so it is off unless
+    # a provider says it wants it.
+    strict_schemas: bool = False
 
     @property
     def needs_key(self) -> bool:
@@ -52,11 +62,13 @@ PROVIDERS: dict[str, Provider] = {
         base_url="https://api.mistral.ai/v1",
         env_var="MISTRAL_API_KEY",
         default_model="mistral-large-latest",
+        strict_schemas=True,
     ),
     "openai": Provider(
         base_url="https://api.openai.com/v1",
         env_var="OPENAI_API_KEY",
         default_model="gpt-5.6-luna",
+        strict_schemas=True,
     ),
     "anthropic": Provider(
         base_url="https://api.anthropic.com/v1",
@@ -76,6 +88,7 @@ def register_provider(
     dialect: str = "openai",
     headers: dict[str, str] | None = None,
     structured_outputs: bool = True,
+    strict_schemas: bool = False,
     overwrite: bool = False,
 ) -> Provider:
     """Teach Agent about another endpoint, then use it by name.
@@ -108,6 +121,7 @@ def register_provider(
         dialect=dialect,
         headers=dict(headers or {}),
         structured_outputs=structured_outputs,
+        strict_schemas=strict_schemas,
     )
     PROVIDERS[name] = provider
     return provider
@@ -164,6 +178,8 @@ class LLMClient:
     last_output_tokens: int = 0
     # Extra headers the endpoint needs, e.g. an OpenRouter attribution header.
     extra_headers: dict[str, str] = field(default_factory=dict)
+    # Whether to send OpenAI's strict flag alongside the schema.
+    strict_schemas: bool = False
     # Injectable for tests; None uses httpx's real network transport.
     transport: httpx.AsyncBaseTransport | None = None
 
@@ -220,13 +236,15 @@ class LLMClient:
             payload["tool_choice"] = tool_choice or "auto"
 
         if output_schema:
+            json_schema: dict[str, Any] = {
+                "name": output_schema.get("title", "response"),
+                "schema": output_schema,
+            }
+            if self.strict_schemas:
+                json_schema["strict"] = True
             payload["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": output_schema.get("title", "response"),
-                    "strict": True,
-                    "schema": output_schema,
-                },
+                "json_schema": json_schema,
             }
 
         response = await client.post(
@@ -241,12 +259,22 @@ class LLMClient:
             self.last_input_tokens = data["usage"].get("prompt_tokens", 0)
             self.last_output_tokens = data["usage"].get("completion_tokens", 0)
 
-        choice = data["choices"][0]["message"]
-        return Message(
-            role="assistant",
-            content=choice.get("content") or "",
-            tool_calls=choice.get("tool_calls", []),
-        )
+        choice = data["choices"][0]
+        message = choice["message"]
+        content = message.get("content") or ""
+        tool_calls = message.get("tool_calls", [])
+
+        # A reply cut off at the token limit is not a reply. Say so, rather
+        # than handing back half a tool call or half an object to parse.
+        if choice.get("finish_reason") == "length":
+            if tool_calls or output_schema:
+                raise TruncatedResponseError(
+                    f"{self.base_url} stopped at the token limit mid-response. "
+                    "Raise Agent(max_tokens=...)."
+                )
+            content += f"\n\n[Response truncated at max_tokens={self.max_tokens}]"
+
+        return Message(role="assistant", content=content, tool_calls=tool_calls)
 
     async def chat_stream(
         self,
@@ -278,13 +306,15 @@ class LLMClient:
             payload["tool_choice"] = tool_choice or "auto"
 
         if output_schema:
+            json_schema: dict[str, Any] = {
+                "name": output_schema.get("title", "response"),
+                "schema": output_schema,
+            }
+            if self.strict_schemas:
+                json_schema["strict"] = True
             payload["response_format"] = {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": output_schema.get("title", "response"),
-                    "strict": True,
-                    "schema": output_schema,
-                },
+                "json_schema": json_schema,
             }
 
         async with client.stream(
@@ -348,10 +378,6 @@ class LLMClient:
                     tool_calls=tool_calls if tool_calls else [],
                 ),
             )
-
-
-class TruncatedResponseError(RuntimeError):
-    """The provider stopped mid-response, leaving unusable output."""
 
 
 def _is_tool_result_message(message: dict[str, Any]) -> bool:
@@ -551,9 +577,9 @@ class AnthropicClient:
         # A response cut off at max_tokens leaves tool_use input truncated, so
         # say so instead of handing the agent a half-formed call.
         if data.get("stop_reason") == "max_tokens":
-            if tool_calls:
+            if tool_calls or output_schema:
                 raise TruncatedResponseError(
-                    f"Anthropic hit max_tokens ({self.max_tokens}) mid tool call. "
+                    f"Anthropic hit max_tokens ({self.max_tokens}) mid-response. "
                     "Raise Agent(max_tokens=...)."
                 )
             content += f"\n\n[Response truncated at max_tokens={self.max_tokens}]"

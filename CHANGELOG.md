@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   a default becomes nullable.
 - `register_provider(structured_outputs=False)` falls back to the old
   prompt-based method for an endpoint that rejects `response_format`.
+- `register_provider(strict_schemas=True)` opts an endpoint into OpenAI's
+  strict mode. Built-in `openai` and `mistral` have it on; it is off
+  elsewhere, since it is an OpenAI extension rather than part of the wire
+  format every compatible server implements.
 
 - Any OpenAI-compatible endpoint works: `Agent(base_url="http://localhost:11434/v1",
   model="llama3.3")` covers Ollama, LM Studio, vLLM, OpenRouter, Groq, Together
@@ -60,6 +64,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- A reply cut off at the token limit now raises
+  `TruncatedResponseError` on OpenAI-compatible endpoints too. Only the
+  Anthropic client checked for it, so elsewhere a truncated tool call or a
+  half-written object surfaced as "did not return valid JSON", blaming the
+  model for the caller's token limit.
 - An explicit `api_key=` no longer loses to the environment variable.
 - The fallback provider uses its own API key and its own model instead of
   sending the primary provider's model to a different API.
