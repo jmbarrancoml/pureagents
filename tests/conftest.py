@@ -17,7 +17,7 @@ import pytest
 from pure_agents import Agent
 from pure_agents.clients import PROVIDERS
 
-PROVIDER_ENV_VARS = [config["env_var"] for config in PROVIDERS.values()]
+PROVIDER_ENV_VARS = [c.env_var for c in PROVIDERS.values() if c.env_var]
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +27,15 @@ def isolated_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def clean_provider_registry():
+    """Undo any register_provider() a test performs."""
+    snapshot = dict(PROVIDERS)
+    yield
+    PROVIDERS.clear()
+    PROVIDERS.update(snapshot)
+
+
 class FakeLLM:
     """A scripted HTTP endpoint standing in for a provider API."""
 
@@ -34,6 +43,7 @@ class FakeLLM:
         self._queue: deque = deque()
         self.requests: list[dict[str, Any]] = []
         self.headers: list[httpx.Headers] = []
+        self.urls: list[str] = []
 
     def queue(
         self,
@@ -90,6 +100,7 @@ class FakeLLM:
         def handler(request: httpx.Request) -> httpx.Response:
             self.requests.append(json.loads(request.content))
             self.headers.append(request.headers)
+            self.urls.append(str(request.url))
             if not self._queue:
                 raise AssertionError(
                     f"FakeLLM received an unscripted request: {request.url}"

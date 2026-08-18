@@ -30,7 +30,13 @@ from pure_agents.agent import (
     completion_sync,
     set_cache_size,
 )
-from pure_agents.clients import TruncatedResponseError
+from pure_agents.clients import (
+    PROVIDERS,
+    Provider,
+    TruncatedResponseError,
+    register_provider,
+    unregister_provider,
+)
 from pure_agents.memory import JSONMemory, Memory
 from pure_agents.message import Message
 from pure_agents.tool import Tool, tool
@@ -43,6 +49,8 @@ __all__ = [
     "JSONMemory",
     "MaxStepsError",
     "Memory",
+    "PROVIDERS",
+    "Provider",
     "Message",
     "Router",
     "StreamEvent",
@@ -56,6 +64,8 @@ __all__ = [
     "clear_cache",
     "completion",
     "completion_sync",
+    "register_provider",
     "set_cache_size",
+    "unregister_provider",
     "tool",
 ]

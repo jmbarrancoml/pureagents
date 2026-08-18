@@ -56,6 +56,7 @@ result = await agent.run("Find the weather in Madrid")
 |---------|-------|
 | Tools | `@tool` decorator, type hints become JSON schemas |
 | Providers | `provider="openai"` (Mistral, OpenAI, Anthropic) |
+| Any endpoint | `base_url="http://localhost:11434/v1"`, or `register_provider(...)` |
 | Streaming | `agent.stream()` yields `StreamEvent` objects |
 | Memory | `session="my-chat"` |
 | Structured outputs | `output=MyDataclass` |
@@ -113,6 +114,23 @@ reliably. Pass `model=` for anything else:
 
 Rates checked against each provider's pricing page on 2026-08-17.
 `agent.usage.cost()` uses the same table.
+
+### Anything else that speaks OpenAI
+
+```python
+# Ollama, LM Studio, vLLM, OpenRouter, Groq, Together, your own gateway
+agent = Agent(base_url="http://localhost:11434/v1", model="llama3.3")
+
+# Or name it once and reuse it
+from pure_agents import register_provider
+
+register_provider("ollama", base_url="http://localhost:11434/v1")
+agent = Agent(provider="ollama", model="llama3.3")
+```
+
+No key needed when the server does not ask for one. See the
+[providers guide](https://pureagents.dev/docs/guides/providers) for the common
+base URLs and for the `dialect="anthropic"` option.
 
 ## Streaming
 
