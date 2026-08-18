@@ -82,6 +82,56 @@ def dataclass_schema(cls: type) -> dict[str, Any]:
     return {"type": "object", "properties": properties, "required": required}
 
 
+NULL_SCHEMA: dict[str, Any] = {"type": "null"}
+
+
+def strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Tighten a schema so a provider can enforce it while decoding.
+
+    Strict modes ask for two things the ordinary schema does not give them:
+    `additionalProperties: false` on every object, and every property named in
+    `required`. A field that had a default becomes nullable rather than absent,
+    because that is the only way strict mode can express "may be missing".
+    """
+    return _tighten(schema)
+
+
+def _tighten(node: Any) -> Any:
+    if not isinstance(node, dict):
+        return node
+
+    tightened = dict(node)
+    properties = tightened.get("properties")
+
+    if isinstance(properties, dict):
+        optional = set(properties) - set(tightened.get("required", []))
+        tightened["properties"] = {
+            name: _nullable(_tighten(sub)) if name in optional else _tighten(sub)
+            for name, sub in properties.items()
+        }
+        tightened["required"] = list(tightened["properties"])
+
+    if tightened.get("type") == "object" and "additionalProperties" not in tightened:
+        tightened["additionalProperties"] = False
+
+    if "items" in tightened:
+        tightened["items"] = _tighten(tightened["items"])
+    if isinstance(tightened.get("anyOf"), list):
+        tightened["anyOf"] = [_tighten(sub) for sub in tightened["anyOf"]]
+    if isinstance(tightened.get("additionalProperties"), dict):
+        tightened["additionalProperties"] = _tighten(tightened["additionalProperties"])
+
+    return tightened
+
+
+def _nullable(node: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(node.get("anyOf"), list):
+        if NULL_SCHEMA in node["anyOf"]:
+            return node
+        return {**node, "anyOf": [*node["anyOf"], dict(NULL_SCHEMA)]}
+    return {"anyOf": [node, dict(NULL_SCHEMA)]}
+
+
 def _literal_schema(values: list[Any]) -> dict[str, Any]:
     schema: dict[str, Any] = {"enum": list(values)}
     value_types = {type(value) for value in values}

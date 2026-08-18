@@ -119,6 +119,12 @@ result = await agent.run(
 # result is an Analysis instance
 ```
 
+The schema is sent as a decoding constraint (`response_format.json_schema` with
+`strict: true` on OpenAI-compatible endpoints, `output_config.format` on
+Anthropic), not appended to the prompt. Supported field types: str, int, float,
+bool, list[T], dict[str, T], Optional[T], Literal[...], Enum, nested dataclasses.
+A reply that will not fit raises `StructuredOutputError` with `.raw`.
+
 ### Memory
 
 Persist conversations across sessions.

@@ -28,6 +28,10 @@ class Provider:
     default_model: str | None = None
     dialect: str = "openai"
     headers: dict[str, str] = field(default_factory=dict)
+    # Whether the endpoint can enforce a JSON schema while decoding. Set
+    # False for a server that rejects response_format, and Agent falls back
+    # to asking for the schema in the prompt.
+    structured_outputs: bool = True
 
     @property
     def needs_key(self) -> bool:
@@ -71,6 +75,7 @@ def register_provider(
     default_model: str | None = None,
     dialect: str = "openai",
     headers: dict[str, str] | None = None,
+    structured_outputs: bool = True,
     overwrite: bool = False,
 ) -> Provider:
     """Teach Agent about another endpoint, then use it by name.
@@ -102,6 +107,7 @@ def register_provider(
         default_model=default_model,
         dialect=dialect,
         headers=dict(headers or {}),
+        structured_outputs=structured_outputs,
     )
     PROVIDERS[name] = provider
     return provider
@@ -194,6 +200,7 @@ class LLMClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
+        output_schema: dict[str, Any] | None = None,
     ) -> Message:
         # Reset first: a response without a usage block used to leave the
         # previous call's numbers in place, which Agent then counted twice.
@@ -211,6 +218,16 @@ class LLMClient:
         if tools:
             payload["tools"] = [t.to_dict() for t in tools]
             payload["tool_choice"] = tool_choice or "auto"
+
+        if output_schema:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": output_schema.get("title", "response"),
+                    "strict": True,
+                    "schema": output_schema,
+                },
+            }
 
         response = await client.post(
             f"{self.base_url}/chat/completions",
@@ -238,6 +255,7 @@ class LLMClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
+        output_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
         # Reset first: a response without a usage block used to leave the
         # previous call's numbers in place, which Agent then counted twice.
@@ -258,6 +276,16 @@ class LLMClient:
         if tools:
             payload["tools"] = [t.to_dict() for t in tools]
             payload["tool_choice"] = tool_choice or "auto"
+
+        if output_schema:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": output_schema.get("title", "response"),
+                    "strict": True,
+                    "schema": output_schema,
+                },
+            }
 
         async with client.stream(
             "POST",
@@ -461,6 +489,7 @@ class AnthropicClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
+        output_schema: dict[str, Any] | None = None,
     ) -> Message:
         system_prompt, converted_msgs = self._convert_messages(messages, images)
 
@@ -484,6 +513,11 @@ class AnthropicClient:
                 payload["tool_choice"] = {"type": "any"}
             elif tool_choice == "none":
                 payload["tool_choice"] = {"type": "none"}
+
+        if output_schema:
+            payload["output_config"] = {
+                "format": {"type": "json_schema", "schema": output_schema}
+            }
 
         response = await client.post(
             f"{self.base_url}/messages",
@@ -537,6 +571,7 @@ class AnthropicClient:
         tools: list[Tool] | None = None,
         tool_choice: str | None = None,
         images: list[tuple[str, str]] | None = None,
+        output_schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[tuple[str, Message | None]]:
         system_prompt, converted_msgs = self._convert_messages(messages, images)
 
@@ -559,6 +594,11 @@ class AnthropicClient:
             payload["tools"] = self._convert_tools(tools)
             if tool_choice == "required":
                 payload["tool_choice"] = {"type": "any"}
+
+        if output_schema:
+            payload["output_config"] = {
+                "format": {"type": "json_schema", "schema": output_schema}
+            }
 
         async with client.stream(
             "POST",

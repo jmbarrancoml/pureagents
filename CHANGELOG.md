@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `output=` is now enforced by the provider while it decodes, instead of being
+  requested in the prompt. OpenAI-compatible endpoints get
+  `response_format.json_schema` with `strict: true`; Anthropic gets
+  `output_config.format`. Schemas are tightened for strict mode automatically:
+  objects forbid extra properties, every property is required, and a field with
+  a default becomes nullable.
+- `register_provider(structured_outputs=False)` falls back to the old
+  prompt-based method for an endpoint that rejects `response_format`.
+
 - Any OpenAI-compatible endpoint works: `Agent(base_url="http://localhost:11434/v1",
   model="llama3.3")` covers Ollama, LM Studio, vLLM, OpenRouter, Groq, Together
   and self-hosted gateways. No key is required when the server does not ask for

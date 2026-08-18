@@ -25,7 +25,7 @@ from pure_agents.clients import (
 )
 from pure_agents.memory import JSONMemory, Memory, write_json_atomically
 from pure_agents.message import Message
-from pure_agents.schema import dataclass_schema
+from pure_agents.schema import dataclass_schema, strict_schema
 from pure_agents.tool import Tool
 
 T = TypeVar("T")
@@ -304,12 +304,14 @@ def _cache_key(
     provider: str,
     tools: list[Tool],
     tool_choice: str | None,
+    output_schema: dict[str, Any] | None = None,
 ) -> str:
     """Hash everything that can change the answer, not just the prompt."""
     payload = {
         "provider": provider,
         "model": model,
         "tool_choice": tool_choice,
+        "output_schema": output_schema,
         "tools": sorted(
             (t.to_dict() for t in tools), key=lambda d: d["function"]["name"]
         ),
@@ -427,6 +429,7 @@ class Agent:
         provider_config = provider_config.with_headers(headers)
         self.base_url = base_url
         self.headers = dict(headers or {})
+        self.native_output = provider_config.structured_outputs
         self.fallback = fallback
 
         self.model = model or provider_config.default_model
@@ -642,6 +645,7 @@ class Agent:
         messages: list[Message],
         tools: list[Tool] | None,
         images: list[tuple[str, str]] | None = None,
+        output_schema: dict[str, Any] | None = None,
     ) -> Message:
         last_error: Exception | None = None
 
@@ -664,6 +668,7 @@ class Agent:
                                 tools=tools,
                                 tool_choice=self.tool_choice,
                                 images=images,
+                                output_schema=output_schema,
                             ),
                             timeout=self.timeout,
                         )
@@ -674,6 +679,7 @@ class Agent:
                             tools=tools,
                             tool_choice=self.tool_choice,
                             images=images,
+                            output_schema=output_schema,
                         )
                     self.usage.add(
                         client.last_input_tokens,
@@ -827,14 +833,20 @@ class Agent:
             self.messages = [Message(role="system", content=self.system)]
 
         structured = bool(output and is_dataclass(output))
+        output_schema = None
         user_prompt = prompt
         if structured:
             schema = _schema_from_dataclass(output)
-            user_prompt = (
-                f"{prompt}\n\n"
-                f"Respond with JSON matching this schema:\n"
-                f"```json\n{json.dumps(schema, indent=2)}\n```"
-            )
+            if self.native_output:
+                # The provider enforces this while decoding, so the prompt stays
+                # about the task rather than carrying a copy of the schema.
+                output_schema = strict_schema({"title": output.__name__, **schema})
+            else:
+                user_prompt = (
+                    f"{prompt}\n\n"
+                    f"Respond with JSON matching this schema:\n"
+                    f"```json\n{json.dumps(schema, indent=2)}\n```"
+                )
 
         user_message = Message(role="user", content=user_prompt)
 
@@ -848,6 +860,7 @@ class Agent:
                 self.provider,
                 list(self.tools.values()),
                 self.tool_choice,
+                output_schema,
             )
             cached = _response_cache.get(cache_key)
             if cached is not None:
@@ -880,6 +893,7 @@ class Agent:
                     messages=self.messages,
                     tools=list(self.tools.values()) if self.tools else None,
                     images=loaded_images if step == 0 else None,
+                    output_schema=output_schema,
                 )
                 self.messages.append(response)
 
